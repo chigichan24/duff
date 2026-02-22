@@ -22,6 +22,7 @@ const DiffView = ({ diff }: { diff: string }) => {
     drawFileList: false,
     matching: 'lines',
     outputFormat: 'side-by-side',
+    renderNothingWhenEmpty: true,
   });
 
   return (
@@ -41,23 +42,40 @@ function App() {
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [newRepoPath, setNewRepoPath] = useState('');
   const [activeDiff, setActiveDiff] = useState<string>('');
-  const [globalInterval, setGlobalInterval] = useState(30);
+  const [activeInterval, setActiveInterval] = useState(30);
+  const [bgInterval, setBgInterval] = useState(60);
+  const [sidebarWidth, setSidebarWidth] = useState(300);
+  const isResizing = useRef(false);
+  const reposRef = useRef<Repository[]>([]);
 
   const activeRepo = repositories.find(r => r.id === activeRepoId);
 
   useEffect(() => {
+    reposRef.current = repositories;
+  }, [repositories]);
+
+  useEffect(() => {
     fetchRepos();
-    const interval = setInterval(fetchRepos, 60000); // 1 min background check
-    return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      reposRef.current.forEach(repo => {
+        if (repo.id !== activeRepoId) {
+          updateStatus(repo.id);
+        }
+      });
+    }, bgInterval * 1000);
+    return () => clearInterval(interval);
+  }, [activeRepoId, bgInterval]);
 
   useEffect(() => {
     if (activeRepoId) {
       updateActiveRepoStatus();
-      const interval = setInterval(updateActiveRepoStatus, globalInterval * 1000); 
+      const interval = setInterval(updateActiveRepoStatus, activeInterval * 1000); 
       return () => clearInterval(interval);
     }
-  }, [activeRepoId, globalInterval]);
+  }, [activeRepoId, activeInterval]);
 
   useEffect(() => {
     if (activeRepoId) {
@@ -65,12 +83,30 @@ function App() {
     }
   }, [activeRepoId, selectedFile]);
 
+  const startResizing = (e: React.MouseEvent) => {
+    isResizing.current = true;
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', stopResizing);
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (!isResizing.current) return;
+    const newWidth = Math.max(200, Math.min(600, e.clientX));
+    setSidebarWidth(newWidth);
+  };
+
+  const stopResizing = () => {
+    isResizing.current = false;
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', stopResizing);
+  };
+
   const fetchRepos = async () => {
     try {
       const res = await fetch('http://localhost:3001/api/repositories');
       const data = await res.json();
       setRepositories(data);
-      // Also update statuses
+      // Initial status check
       data.forEach((repo: Repository) => updateStatus(repo.id));
     } catch (err) {
       console.error('Failed to fetch repos', err);
@@ -88,7 +124,10 @@ function App() {
   };
 
   const updateActiveRepoStatus = () => {
-    if (activeRepoId) updateStatus(activeRepoId);
+    if (activeRepoId) {
+      updateStatus(activeRepoId);
+      fetchDiff(activeRepoId, selectedFile);
+    }
   };
 
   const fetchDiff = async (id: string, file: string | null) => {
@@ -143,7 +182,7 @@ function App() {
   return (
     <div className="app-container">
       {/* Sidebar */}
-      <aside className="sidebar">
+      <aside className="sidebar" style={{ width: `${sidebarWidth}px`, flex: 'none' }}>
         <div className="sidebar-header">
           <h2>Duff</h2>
           <button onClick={() => setShowAddModal(true)} className="icon-btn" title="Add Repository">
@@ -185,6 +224,9 @@ function App() {
           <span>Config</span>
         </div>
       </aside>
+
+      {/* Resizer */}
+      <div className="resizer" onMouseDown={startResizing} />
 
       {/* Main Content */}
       <main className="main-content">
@@ -276,12 +318,21 @@ function App() {
           <div className="modal">
             <h3>Settings</h3>
             <div className="settings-field">
-              <label>Active Poll Interval (seconds):</label>
+              <label>Active Repo Poll Interval (sec):</label>
               <input 
                 type="number" 
-                value={globalInterval}
-                onChange={(e) => setGlobalInterval(Number(e.target.value))}
+                value={activeInterval}
+                onChange={(e) => setActiveInterval(Number(e.target.value))}
                 min="5"
+              />
+            </div>
+            <div className="settings-field">
+              <label>Background Repo Poll Interval (sec):</label>
+              <input 
+                type="number" 
+                value={bgInterval}
+                onChange={(e) => setBgInterval(Number(e.target.value))}
+                min="10"
               />
             </div>
             <div className="modal-actions">

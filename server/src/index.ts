@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { simpleGit, SimpleGit } from 'simple-git';
 
 const app = express();
@@ -52,16 +53,17 @@ app.post('/api/repositories', async (req, res) => {
   }
 
   const repos = getRepositories();
-  const id = Buffer.from(repoPath).toString('base64').substring(0, 12);
+  const normalizedPath = path.resolve(repoPath);
+  const id = crypto.createHash('md5').update(normalizedPath).digest('hex').substring(0, 12);
   
-  if (repos.find(r => r.id === id)) {
+  if (repos.find(r => r.path === normalizedPath || r.id === id)) {
     return res.status(400).json({ error: 'Repository already registered' });
   }
 
   const newRepo: Repository = {
     id,
-    name: path.basename(repoPath),
-    path: repoPath,
+    name: path.basename(normalizedPath),
+    path: normalizedPath,
     pollInterval
   };
 

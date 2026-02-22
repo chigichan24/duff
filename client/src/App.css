@@ -141,6 +141,19 @@ body, html, #root {
   color: var(--text-main);
 }
 
+.resizer {
+  width: 4px;
+  cursor: col-resize;
+  background-color: var(--border-color);
+  transition: background-color 0.2s;
+  flex-shrink: 0;
+}
+
+.resizer:hover, .resizer:active {
+  background-color: var(--primary-color);
+  width: 4px;
+}
+
 .settings-field {
   display: flex;
   flex-direction: column;
@@ -153,13 +166,19 @@ body, html, #root {
   font-weight: 600;
 }
 
+.settings-field input {
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+
 /* Main Content */
 .main-content {
-  width: 80%;
   flex: 1;
   display: flex;
   flex-direction: column;
   background-color: var(--main-bg);
+  min-width: 0; /* Important for flex child with overflow */
 }
 
 .main-header {
@@ -265,7 +284,18 @@ body, html, #root {
   width: 100%;
 }
 
-/* diff2html custom styling */
+/* diff2html custom styling - wrap long lines */
+.d2h-code-line-ctn {
+  white-space: pre-wrap !important;
+  word-break: break-all !important;
+  display: inline-block !important;
+  width: 100% !important;
+}
+
+.d2h-code-side-line {
+  display: flex !important;
+}
+
 .d2h-file-header {
   display: none !important;
 }
