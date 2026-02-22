@@ -133,6 +133,24 @@ body, html, #root {
   align-items: center;
   gap: 8px;
   color: var(--text-muted);
+  cursor: pointer;
+}
+
+.sidebar-footer:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  color: var(--text-main);
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.settings-field label {
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 /* Main Content */

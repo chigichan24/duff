@@ -38,8 +38,10 @@ function App() {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [newRepoPath, setNewRepoPath] = useState('');
   const [activeDiff, setActiveDiff] = useState<string>('');
+  const [globalInterval, setGlobalInterval] = useState(30);
 
   const activeRepo = repositories.find(r => r.id === activeRepoId);
 
@@ -52,10 +54,10 @@ function App() {
   useEffect(() => {
     if (activeRepoId) {
       updateActiveRepoStatus();
-      const interval = setInterval(updateActiveRepoStatus, 30000); // 30 sec active check
+      const interval = setInterval(updateActiveRepoStatus, globalInterval * 1000); 
       return () => clearInterval(interval);
     }
-  }, [activeRepoId]);
+  }, [activeRepoId, globalInterval]);
 
   useEffect(() => {
     if (activeRepoId) {
@@ -178,7 +180,7 @@ function App() {
           ))}
         </div>
 
-        <div className="sidebar-footer">
+        <div className="sidebar-footer" onClick={() => setShowSettingsModal(true)}>
           <Settings size={20} />
           <span>Config</span>
         </div>
@@ -264,6 +266,27 @@ function App() {
                 <button type="submit" className="primary">Add</button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettingsModal && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <h3>Settings</h3>
+            <div className="settings-field">
+              <label>Active Poll Interval (seconds):</label>
+              <input 
+                type="number" 
+                value={globalInterval}
+                onChange={(e) => setGlobalInterval(Number(e.target.value))}
+                min="5"
+              />
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="primary" onClick={() => setShowSettingsModal(false)}>Close</button>
+            </div>
           </div>
         </div>
       )}
