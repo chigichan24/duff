@@ -118,6 +118,22 @@ function App() {
     }
   };
 
+  const handleDeleteRepo = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Are you sure you want to remove this repository?')) return;
+    try {
+      const res = await fetch(`http://localhost:3001/api/repositories/${id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        if (activeRepoId === id) setActiveRepoId(null);
+        fetchRepos();
+      }
+    } catch (err) {
+      console.error('Failed to delete repo', err);
+    }
+  };
+
   const filteredFiles = activeRepo?.status?.modifiedFiles.filter(f => 
     f.toLowerCase().includes(searchTerm.toLowerCase())
   ) || [];
@@ -145,7 +161,12 @@ function App() {
             >
               <div className="repo-info">
                 <span className="repo-name">{repo.name}</span>
-                {repo.status?.hasChanges && <span className="change-badge"></span>}
+                <div className="repo-actions">
+                  {repo.status?.hasChanges && <span className="change-badge"></span>}
+                  <button onClick={(e) => handleDeleteRepo(repo.id, e)} className="delete-btn icon-btn" title="Delete">
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
               <div className="repo-details">
                 <span className="repo-path">{repo.path}</span>
@@ -211,11 +232,9 @@ function App() {
 
               <div className="diff-viewer">
                 {activeDiff ? (
-                  <pre className="diff-pre">
-                    {activeDiff}
-                  </pre>
+                  <DiffView diff={activeDiff} />
                 ) : (
-                  <div className="no-diff">No changes detected</div>
+                  <div className="no-diff">No changes detected in {selectedFile || 'the working tree'}</div>
                 )}
               </div>
             </div>
