@@ -34,11 +34,21 @@ app.get('/api/repositories', (req, res) => {
   res.json(getRepositories());
 });
 
-app.post('/api/repositories', (req, res) => {
+app.post('/api/repositories', async (req, res) => {
   const { path: repoPath, pollInterval = 30 } = req.body;
   
   if (!fs.existsSync(repoPath)) {
     return res.status(400).json({ error: 'Directory does not exist' });
+  }
+
+  try {
+    const git = simpleGit(repoPath);
+    const isRepo = await git.checkIsRepo();
+    if (!isRepo) {
+      return res.status(400).json({ error: 'Not a valid git repository' });
+    }
+  } catch (err) {
+    return res.status(400).json({ error: 'Invalid repository path' });
   }
 
   const repos = getRepositories();

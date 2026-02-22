@@ -1,0 +1,24 @@
+{
+  "name": "duff",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/chigichan24/duff.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/chigichan24/duff/issues"
+  },
+  "homepage": "https://github.com/chigichan24/duff#readme",
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}
