@@ -1,8 +1,26 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Plus, Trash2, RefreshCw, GitBranch, Settings, X, GripVertical } from 'lucide-react';
 import * as Diff2Html from 'diff2html';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+import type { DropResult, DroppableProps } from '@hello-pangea/dnd';
 import 'diff2html/bundles/css/diff2html.min.css';
 import './App.css';
+
+// Custom Droppable to handle React mounting
+export const StrictModeDroppable = ({ children, ...props }: DroppableProps) => {
+  const [enabled, setEnabled] = useState(false);
+  useEffect(() => {
+    const animation = requestAnimationFrame(() => setEnabled(true));
+    return () => {
+      cancelAnimationFrame(animation);
+      setEnabled(false);
+    };
+  }, []);
+  if (!enabled) {
+    return null;
+  }
+  return <Droppable {...props}>{children}</Droppable>;
+};
 
 interface Repository {
   id: string;
@@ -84,6 +102,26 @@ function App() {
     isResizing.current = false;
     document.removeEventListener('mousemove', handleMouseMove);
     document.removeEventListener('mouseup', stopResizing);
+  };
+
+  const onDragEnd = async (result: DropResult) => {
+    if (!result.destination) return;
+
+    const items = Array.from(repositories);
+    const [reorderedItem] = items.splice(result.source.index, 1);
+    items.splice(result.destination.index, 0, reorderedItem);
+
+    setRepositories(items);
+
+    try {
+      await fetch('http://localhost:3001/api/repositories/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repositoryIds: items.map(r => r.id) })
+      });
+    } catch (err) {
+      console.error('Failed to save reordered repos', err);
+    }
   };
 
   const fetchRepos = async () => {
@@ -178,34 +216,57 @@ function App() {
           </button>
         </div>
         
-        <div className="repo-list">
-          {repositories.map(repo => (
-            <div 
-              key={repo.id} 
-              className={`repo-item ${activeRepoId === repo.id ? 'active' : ''}`}
-              onClick={() => {
-                setActiveRepoId(repo.id);
-                setSelectedFile(null);
-              }}
-            >
-              <div className="repo-info">
-                <span className="repo-name">{repo.name}</span>
-                <div className="repo-actions">
-                  {repo.status?.hasChanges && <span className="change-badge"></span>}
-                  <button onClick={(e) => handleDeleteRepo(repo.id, e)} className="delete-btn icon-btn" title="Delete">
-                    <Trash2 size={14} />
-                  </button>
-                </div>
+        <DragDropContext onDragEnd={onDragEnd}>
+          <StrictModeDroppable droppableId="repositories">
+            {(provided) => (
+              <div 
+                className="repo-list" 
+                {...provided.droppableProps} 
+                ref={provided.innerRef}
+              >
+                {repositories.map((repo, index) => (
+                  <Draggable key={repo.id} draggableId={repo.id} index={index}>
+                    {(provided, snapshot) => (
+                      <div 
+                        ref={provided.innerRef}
+                        {...provided.draggableProps}
+                        className={`repo-item ${activeRepoId === repo.id ? 'active' : ''} ${snapshot.isDragging ? 'dragging' : ''}`}
+                        onClick={() => {
+                          setActiveRepoId(repo.id);
+                          setSelectedFile(null);
+                        }}
+                      >
+                        <div className="repo-main-content">
+                          <div className="drag-handle" {...provided.dragHandleProps}>
+                            <GripVertical size={16} />
+                          </div>
+                          <div className="repo-info-container">
+                            <div className="repo-info">
+                              <span className="repo-name">{repo.name}</span>
+                              <div className="repo-actions">
+                                {repo.status?.hasChanges && <span className="change-badge"></span>}
+                                <button onClick={(e) => handleDeleteRepo(repo.id, e)} className="delete-btn icon-btn" title="Delete">
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </div>
+                            <div className="repo-details">
+                              <span className="repo-path">{repo.path}</span>
+                              <span className="repo-branch">
+                                <GitBranch size={12} /> {repo.status?.branch || '...'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </Draggable>
+                ))}
+                {provided.placeholder}
               </div>
-              <div className="repo-details">
-                <span className="repo-path">{repo.path}</span>
-                <span className="repo-branch">
-                  <GitBranch size={12} /> {repo.status?.branch || '...'}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
+            )}
+          </StrictModeDroppable>
+        </DragDropContext>
 
         <div className="sidebar-footer" onClick={() => setShowSettingsModal(true)}>
           <Settings size={20} />
