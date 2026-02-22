@@ -53,3 +53,7 @@
   - ドラッグ＆ドロップ（@hello-pangea/dnd）によるリポジトリリストの並び替え機能を実装。
   - バックエンドに並び順を永続化するための API を追加。
 - **Fix:** React StrictMode 環境下でドラッグ＆ドロップが正常にレンダリングされない問題を StrictModeDroppable を導入して修正。
+- **UI Enhancement:**
+  - 「No changes」メッセージにゴルフのユーモア（"No changes on this hole!"）を追加。
+  - Diff ビューのパディングを 0 にし、ブラウザの横幅を最大限に活用。
+  - コードの折り返し挙動を改善：基本は `pre`（折り返しなし）とし、画面幅が狭い場合のみ自動折り返しを適用。
