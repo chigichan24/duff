@@ -164,7 +164,15 @@ function App() {
     <div className="app-container">
       <aside className="sidebar" style={{ width: `${sidebarWidth}px`, flex: 'none' }}>
         <div className="sidebar-header">
-          <h2>⛳️ Duff</h2>
+          <h2 
+            className="logo" 
+            onClick={() => {
+              setActiveRepoId(null);
+              setSelectedFile(null);
+            }}
+          >
+            ⛳️ Duff
+          </h2>
           <button onClick={() => setShowAddModal(true)} className="icon-btn" title="Add Repository">
             <Plus size={20} />
           </button>
