@@ -365,6 +365,7 @@ body, html, #root {
   justify-content: center;
   align-items: center;
   height: 100%;
+  width: 100%;
   color: var(--text-muted);
   text-align: center;
 }
@@ -373,23 +374,24 @@ body, html, #root {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
+  padding: 40px;
 }
 
 .humor-message .emoji {
-  font-size: 3rem;
+  font-size: 4rem;
   margin-bottom: 8px;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.1));
 }
 
 .humor-message p {
-  font-size: 1.2rem;
-  font-weight: 600;
+  font-size: 1.4rem;
+  font-weight: 700;
   margin: 0;
-  color: var(--text-main);
 }
 
 .humor-message small {
-  color: var(--text-muted);
+  font-size: 0.9rem;
 }
 
 /* Modal */
