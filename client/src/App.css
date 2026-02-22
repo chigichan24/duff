@@ -72,8 +72,28 @@ body, html, #root {
   margin-bottom: 4px;
 }
 
+.repo-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.delete-btn {
+  opacity: 0;
+  transition: opacity 0.2s;
+  padding: 2px !important;
+}
+
+.repo-item:hover .delete-btn {
+  opacity: 1;
+}
+
 .repo-name {
   font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 150px;
 }
 
 .change-badge {
@@ -81,6 +101,7 @@ body, html, #root {
   height: 8px;
   background-color: #2da44e;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .repo-details {
@@ -218,20 +239,26 @@ body, html, #root {
 .diff-viewer {
   flex: 1;
   overflow: auto;
-  padding: 16px;
-  background-color: #f6f8fa;
+  padding: 0;
+  background-color: #ffffff;
 }
 
-.diff-pre {
-  background-color: #ffffff;
-  padding: 16px;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  margin: 0;
-  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: pre-wrap;
+.diff-content {
+  width: 100%;
+}
+
+/* diff2html custom styling */
+.d2h-file-header {
+  display: none !important;
+}
+
+.d2h-file-wrapper {
+  margin: 0 !important;
+  border: none !important;
+}
+
+.d2h-file-side-by-side {
+  margin-bottom: 0 !important;
 }
 
 .no-diff, .welcome {
