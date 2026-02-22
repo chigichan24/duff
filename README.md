@@ -1,14 +1,16 @@
 # ⛳️ duff
 
-**duff** is a specialized tool designed to visualize progress across multiple repositories, focusing specifically on tracking status through the familiar `git diff` format.
+**⛳️ duff** is a specialized tool designed to visualize progress across multiple repositories, focusing specifically on tracking status through the familiar `git diff` format.
 
-## Key Features
+![](docs/screenshot.png)
+
+## 🏌️‍♀️Key Features
 
 * **Multi-Repo Visualization**: Monitor the status of multiple Git repositories from a single, unified dashboard.
 * **Git Diff Focus**: Gain deep insights into changes with high-fidelity `git diff` renderings.
 * **Optimized for the AI Era**: Quickly grasp development progress to facilitate seamless collaboration between humans and AI.
 
-## Tech Stack
+## 🏌️‍♂️Tech Stack
 
 ### Client (Frontend)
 * **Framework**: [React 19](https://react.dev/)
@@ -27,7 +29,7 @@
     * `simple-git`: Simplified Git command abstraction.
     * `cors` & `dotenv`: Security and environment management.
 
-## Getting Started
+## ☄️Getting Started
 
 ### 1. Clone the Repository
 ```bash
