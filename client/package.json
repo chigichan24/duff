@@ -10,7 +10,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "diff2html": "^3.4.56",
+    "lucide-react": "^0.575.0",
     "react": "^19.2.0",
+    "react-diff-view": "^3.3.2",
     "react-dom": "^19.2.0"
   },
   "devDependencies": {
