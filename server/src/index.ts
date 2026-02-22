@@ -79,6 +79,21 @@ app.delete('/api/repositories/:id', (req, res) => {
   res.status(204).send();
 });
 
+app.post('/api/repositories/reorder', (req, res) => {
+  const { repositoryIds } = req.body;
+  if (!Array.isArray(repositoryIds)) {
+    return res.status(400).json({ error: 'Invalid data format' });
+  }
+
+  const currentRepos = getRepositories();
+  const reorderedRepos = repositoryIds
+    .map(id => currentRepos.find(r => r.id === id))
+    .filter(Boolean) as Repository[];
+
+  saveRepositories(reorderedRepos);
+  res.json(reorderedRepos);
+});
+
 app.get('/api/repositories/:id/status', async (req, res) => {
   const { id } = req.params;
   const repo = getRepositories().find(r => r.id === id);
