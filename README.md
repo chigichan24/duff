@@ -1,6 +1,6 @@
 # ⛳️ duff
 
-<!-- coverage-badge -->![Coverage](https://img.shields.io/badge/coverage-calculating-lightgrey)<!-- /coverage-badge -->
+<!-- coverage-badge -->![Coverage](https://img.shields.io/badge/coverage-97.22%25-green)<!-- /coverage-badge -->
 
 **⛳️ duff** is a specialized tool designed to visualize progress across multiple repositories, focusing specifically on tracking status through the familiar `git diff` format.
 
