@@ -28,3 +28,6 @@ Thumbs.db
 # Frontend specific
 client/dev-dist
 client/stats.html
+
+# Work Logging
+history.log
