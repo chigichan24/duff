@@ -4,7 +4,6 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { simpleGit, SimpleGit } from 'simple-git';
-
 const app = express();
 const port = process.env.PORT || 3001;
 const REPO_FILE = path.join(__dirname, '../repositories.json');
@@ -125,13 +124,71 @@ app.get('/api/repositories/:id/diff', async (req, res) => {
 
   try {
     const git: SimpleGit = simpleGit(repo.path);
-    // Get diff against working tree
     const args = ['--no-color', 'HEAD'];
     if (file) args.push('--', file as string);
     
     const diff = await git.diff(args);
     res.json({ diff });
   } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/repositories/:id/content', async (req, res) => {
+  const { id } = req.params;
+  const { file, version } = req.query;
+  const repo = getRepositories().find(r => r.id === id);
+  
+  if (!repo) return res.status(404).json({ error: 'Repository not found' });
+  if (!file) return res.status(400).json({ error: 'File path is required' });
+
+  const filePath = file as string;
+  const repoPath = path.resolve(repo.path);
+  const fullPath = path.resolve(repoPath, filePath);
+
+  // Security check: ensure path is within repo
+  const relative = path.relative(repoPath, fullPath);
+  const isSafe = relative && !relative.startsWith('..') && !path.isAbsolute(relative);
+
+  if (!isSafe) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  const ext = path.extname(filePath).toLowerCase();
+  const mimeTypes: { [key: string]: string } = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml'
+  };
+  const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+  // Normalize path for git (always relative to repo root, no ./ or / prefix)
+  const gitPath = relative.replace(/\\/g, '/');
+
+  try {
+    if (version === 'HEAD') {
+      try {
+        const git = simpleGit(repo.path) as SimpleGit & { binary(commands: string[]): Promise<Buffer> };
+        const data = await git.binary(['show', `HEAD:${gitPath}`]);
+        res.setHeader('Content-Type', contentType);
+        res.send(data);
+      } catch (err) {
+        res.status(404).json({ error: 'File not found in HEAD' });
+      }
+    } else {
+      const fullPathToRead = path.resolve(repoPath, gitPath);
+      if (!fs.existsSync(fullPathToRead)) {
+        return res.status(404).json({ error: 'File not found in working tree' });
+      }
+      const data = fs.readFileSync(fullPathToRead);
+      res.setHeader('Content-Type', contentType);
+      res.send(data);
+    }
+  } catch (error: any) {
+    console.error(`Content API error for repo ${id} file ${filePath}:`, error);
     res.status(500).json({ error: error.message });
   }
 });

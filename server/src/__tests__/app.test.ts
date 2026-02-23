@@ -291,4 +291,81 @@ describe('API Server', () => {
       expect(res.body.error).toBe('Git diff failed');
     });
   });
+
+  describe('GET /api/repositories/:id/content', () => {
+    it('should return 404 if repository not found', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(mockRepos));
+      
+      const res = await request(app).get('/api/repositories/non-existent/content').query({ file: 'test.png' });
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('Repository not found');
+    });
+
+    it('should return 400 if file parameter is missing', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(mockRepos));
+      
+      const res = await request(app).get('/api/repositories/repo1/content');
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('File path is required');
+    });
+
+    it('should return 403 if path is outside repository', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(mockRepos));
+      
+      const res = await request(app).get('/api/repositories/repo1/content').query({ file: '../../etc/passwd' });
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('Access denied');
+    });
+
+    it('should return HEAD version successfully', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(mockRepos));
+      
+      const mockBuffer = Buffer.from('mock-head-data');
+      const mockGit = {
+        binary: vi.fn().mockResolvedValue(mockBuffer),
+      };
+      vi.mocked(simpleGit).mockReturnValue(mockGit as any);
+
+      const res = await request(app).get('/api/repositories/repo1/content').query({ file: 'test.png', version: 'HEAD' });
+      expect(res.status).toBe(200);
+      expect(res.header['content-type']).toBe('image/png');
+      expect(res.body.toString()).toBe('mock-head-data');
+      expect(mockGit.binary).toHaveBeenCalledWith(['show', 'HEAD:test.png']);
+    });
+
+    it('should return working tree version successfully', async () => {
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        if (typeof p === 'string' && p.includes('repositories.json')) return true;
+        if (typeof p === 'string' && p.includes('test.png')) return true;
+        return true;
+      });
+      vi.mocked(fs.readFileSync).mockImplementation((p) => {
+        if (typeof p === 'string' && p.includes('repositories.json')) return JSON.stringify(mockRepos);
+        if (typeof p === 'string' && p.includes('test.png')) return Buffer.from('mock-working-data');
+        return '';
+      });
+
+      const res = await request(app).get('/api/repositories/repo1/content').query({ file: 'test.png', version: 'working' });
+      expect(res.status).toBe(200);
+      expect(res.header['content-type']).toBe('image/png');
+      expect(res.body.toString()).toBe('mock-working-data');
+    });
+
+    it('should return 404 if file not found in working tree', async () => {
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        if (typeof p === 'string' && p.includes('repositories.json')) return true;
+        if (typeof p === 'string' && p.includes('missing.png')) return false;
+        return true;
+      });
+      vi.mocked(fs.readFileSync).mockReturnValue(JSON.stringify(mockRepos));
+
+      const res = await request(app).get('/api/repositories/repo1/content').query({ file: 'missing.png', version: 'working' });
+      expect(res.status).toBe(404);
+      expect(res.body.error).toBe('File not found in working tree');
+    });
+  });
 });

@@ -3,6 +3,7 @@ import { Search, Plus, Trash2, RefreshCw, GitBranch, Settings, X, GripVertical }
 import * as Diff2Html from 'diff2html';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import type { DropResult, DroppableProps } from '@hello-pangea/dnd';
+import pixelmatch from 'pixelmatch';
 import 'diff2html/bundles/css/diff2html.min.css';
 import './App.css';
 
@@ -20,6 +21,154 @@ export const StrictModeDroppable = ({ children, ...props }: DroppableProps) => {
     return null;
   }
   return <Droppable {...props}>{children}</Droppable>;
+};
+
+const isImageFile = (filename: string | null) => {
+  if (!filename) return false;
+  const ext = filename.split('.').pop()?.toLowerCase();
+  return ext && ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext);
+};
+
+const ImageDiffView = ({ repoId, file, lastUpdate }: { repoId: string; file: string; lastUpdate?: string }) => {
+  const timestamp = lastUpdate ? new Date(lastUpdate).getTime() : Date.now();
+  const beforeUrl = `http://localhost:3001/api/repositories/${repoId}/content?file=${encodeURIComponent(file)}&version=HEAD&t=${timestamp}`;
+  const afterUrl = `http://localhost:3001/api/repositories/${repoId}/content?file=${encodeURIComponent(file)}&version=working&t=${timestamp}`;
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [beforeExists, setBeforeExists] = useState(true);
+  const [afterExists, setAfterExists] = useState(true);
+  const [modalImage, setModalImage] = useState<{ url?: string; canvas?: HTMLCanvasElement; title: string } | null>(null);
+
+  useEffect(() => {
+    const loadImage = (url: string): Promise<HTMLImageElement | null> => {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = () => resolve(null); // Return null on error (404, etc)
+        img.src = url;
+      });
+    };
+
+    const runDiff = async () => {
+      try {
+        const [img1, img2] = await Promise.all([loadImage(beforeUrl), loadImage(afterUrl)]);
+        
+        setBeforeExists(!!img1);
+        setAfterExists(!!img2);
+
+        if (!img1 || !img2) {
+          setError(null); 
+          return;
+        }
+
+        if (img1.width !== img2.width || img1.height !== img2.height) {
+          setError(`Dimensions mismatch: ${img1.width}x${img1.height} vs ${img2.width}x${img2.height}. Visual diff disabled.`);
+          return;
+        }
+
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const { width, height } = img1;
+        canvas.width = width;
+        canvas.height = height;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        const c1 = document.createElement('canvas');
+        const c2 = document.createElement('canvas');
+        c1.width = c2.width = width;
+        c1.height = c2.height = height;
+        const ctx1 = c1.getContext('2d')!;
+        const ctx2 = c2.getContext('2d')!;
+        
+        ctx1.drawImage(img1, 0, 0);
+        ctx2.drawImage(img2, 0, 0);
+
+        const imgData1 = ctx1.getImageData(0, 0, width, height);
+        const imgData2 = ctx2.getImageData(0, 0, width, height);
+        const diffData = ctx.createImageData(width, height);
+
+        pixelmatch(imgData1.data, imgData2.data, diffData.data, width, height, { threshold: 0.1 });
+        ctx.putImageData(diffData, 0, 0);
+        setError(null);
+      } catch (err: any) {
+        console.error('Image diff error:', err);
+        setError(err.message || 'Failed to generate visual diff.');
+      }
+    };
+
+    runDiff();
+  }, [beforeUrl, afterUrl]);
+
+  return (
+    <div className="image-diff-container">
+      <div className="image-diff-grid">
+        <div className="image-diff-item">
+          <h5>Before (HEAD)</h5>
+          <div className="image-wrapper">
+            {beforeExists ? (
+              <img src={beforeUrl} alt="Before" onClick={() => setModalImage({ url: beforeUrl, title: 'Before (HEAD)' })} />
+            ) : (
+              <div className="no-image-placeholder">New File</div>
+            )}
+          </div>
+        </div>
+        <div className="image-diff-item">
+          <h5>After (Working Tree)</h5>
+          <div className="image-wrapper">
+            {afterExists ? (
+              <img src={afterUrl} alt="After" onClick={() => setModalImage({ url: afterUrl, title: 'After (Working Tree)' })} />
+            ) : (
+              <div className="no-image-placeholder">Deleted File</div>
+            )}
+          </div>
+        </div>
+        <div className="image-diff-item">
+          <h5>Visual Diff</h5>
+          <div className="image-wrapper">
+            {beforeExists && afterExists ? (
+              <canvas 
+                ref={canvasRef} 
+                onClick={() => {
+                  const newCanvas = document.createElement('canvas');
+                  newCanvas.width = canvasRef.current!.width;
+                  newCanvas.height = canvasRef.current!.height;
+                  newCanvas.getContext('2d')!.drawImage(canvasRef.current!, 0, 0);
+                  setModalImage({ canvas: newCanvas, title: 'Visual Diff' });
+                }} 
+              />
+            ) : (
+              <div className="no-image-placeholder">N/A</div>
+            )}
+          </div>
+        </div>
+      </div>
+      {error && <div className="diff-error">{error}</div>}
+
+      {modalImage && (
+        <div className="image-modal-overlay" onClick={() => setModalImage(null)}>
+          <div className="image-modal-content" onClick={e => e.stopPropagation()}>
+            <span className="image-modal-title">{modalImage.title}</span>
+            {modalImage.url ? (
+              <img src={modalImage.url} alt={modalImage.title} />
+            ) : modalImage.canvas ? (
+              <div ref={el => {
+                if (el && modalImage.canvas && !el.hasChildNodes()) {
+                  el.appendChild(modalImage.canvas);
+                }
+              }} />
+            ) : null}
+            <button className="close-modal" onClick={() => setModalImage(null)}>
+              <X size={32} />
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 };
 
 interface Repository {
@@ -86,7 +235,7 @@ function App() {
     }
   }, [activeRepoId, selectedFile]);
 
-  const startResizing = (e: React.MouseEvent) => {
+  const startResizing = () => {
     isResizing.current = true;
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', stopResizing);
@@ -322,7 +471,13 @@ function App() {
               </div>
 
               <div className="diff-viewer">
-                {activeDiff ? (
+                {selectedFile && isImageFile(selectedFile) && activeRepoId ? (
+                  <ImageDiffView 
+                    repoId={activeRepoId} 
+                    file={selectedFile} 
+                    lastUpdate={activeRepo?.status?.lastUpdate} 
+                  />
+                ) : activeDiff ? (
                   <DiffView diff={activeDiff} />
                 ) : (
                   <div className="no-diff">

@@ -11,6 +11,7 @@
 
 * **Multi-Repo Visualization**: Monitor the status of multiple Git repositories from a single, unified dashboard.
 * **Git Diff Focus**: Gain deep insights into changes with high-fidelity `git diff` renderings.
+* **Visual Image Diff**: Detect even subtle changes in images (`png`, `jpg`, `webp`, `svg`) with pixel-perfect comparison using `pixelmatch`.
 * **Optimized for the AI Era**: Quickly grasp development progress to facilitate seamless collaboration between humans and AI.
 
 ## 🏌️‍♂️Tech Stack
@@ -21,6 +22,7 @@
 * **Language**: [TypeScript](https://www.typescriptlang.org/)
 * **Key Libraries**:
     * `react-diff-view` / `diff2html`: Advanced diff rendering.
+    * `pixelmatch`: Pixel-level image comparison.
     * `@hello-pangea/dnd`: Intuitive drag-and-drop interface.
     * `lucide-react`: Modern icon set.
 
