@@ -155,17 +155,12 @@ app.get('/api/repositories/:id/content', async (req, res) => {
   } catch (e) {}
 
   let fullPath = path.resolve(repoPath, filePath);
-  // Do not use realpathSync for fullPath yet, as it might not exist if it's HEAD version or deleted file
-
-  console.log(`Content request: repoId=${id}, filePath=${filePath}`);
-  console.log(`Resolved: repoPath=${repoPath}, fullPath=${fullPath}`);
 
   // Security check: ensure path is within repo
   const relative = path.relative(repoPath, fullPath);
   const isSafe = relative && !relative.startsWith('..') && !path.isAbsolute(relative);
   
   if (!isSafe && relative !== '') {
-    console.error(`Security violation attempt: ${fullPath} is not in ${repoPath}`);
     return res.status(403).json({ error: 'Access denied' });
   }
 
@@ -194,7 +189,6 @@ app.get('/api/repositories/:id/content', async (req, res) => {
         res.setHeader('Content-Type', contentType);
         res.send(stdout);
       } catch (err) {
-        console.error(`Git show error for ${gitPath}:`, err);
         res.status(404).json({ error: 'File not found in HEAD' });
       }
     } else {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Plus, Trash2, RefreshCw, GitBranch, Settings, GripVertical } from 'lucide-react';
+import { Search, Plus, Trash2, RefreshCw, GitBranch, Settings, X, GripVertical } from 'lucide-react';
 import * as Diff2Html from 'diff2html';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import type { DropResult, DroppableProps } from '@hello-pangea/dnd';
@@ -37,6 +37,7 @@ const ImageDiffView = ({ repoId, file, lastUpdate }: { repoId: string; file: str
   const [error, setError] = useState<string | null>(null);
   const [beforeExists, setBeforeExists] = useState(true);
   const [afterExists, setAfterExists] = useState(true);
+  const [modalImage, setModalImage] = useState<{ url?: string; canvas?: HTMLCanvasElement; title: string } | null>(null);
 
   useEffect(() => {
     const loadImage = (url: string): Promise<HTMLImageElement | null> => {
@@ -108,23 +109,64 @@ const ImageDiffView = ({ repoId, file, lastUpdate }: { repoId: string; file: str
         <div className="image-diff-item">
           <h5>Before (HEAD)</h5>
           <div className="image-wrapper">
-            {beforeExists ? <img src={beforeUrl} alt="Before" /> : <div className="no-image-placeholder">New File</div>}
+            {beforeExists ? (
+              <img src={beforeUrl} alt="Before" onClick={() => setModalImage({ url: beforeUrl, title: 'Before (HEAD)' })} />
+            ) : (
+              <div className="no-image-placeholder">New File</div>
+            )}
           </div>
         </div>
         <div className="image-diff-item">
           <h5>After (Working Tree)</h5>
           <div className="image-wrapper">
-            {afterExists ? <img src={afterUrl} alt="After" /> : <div className="no-image-placeholder">Deleted File</div>}
+            {afterExists ? (
+              <img src={afterUrl} alt="After" onClick={() => setModalImage({ url: afterUrl, title: 'After (Working Tree)' })} />
+            ) : (
+              <div className="no-image-placeholder">Deleted File</div>
+            )}
           </div>
         </div>
         <div className="image-diff-item">
           <h5>Visual Diff</h5>
           <div className="image-wrapper">
-            {beforeExists && afterExists ? <canvas ref={canvasRef} /> : <div className="no-image-placeholder">N/A</div>}
+            {beforeExists && afterExists ? (
+              <canvas 
+                ref={canvasRef} 
+                onClick={() => {
+                  const newCanvas = document.createElement('canvas');
+                  newCanvas.width = canvasRef.current!.width;
+                  newCanvas.height = canvasRef.current!.height;
+                  newCanvas.getContext('2d')!.drawImage(canvasRef.current!, 0, 0);
+                  setModalImage({ canvas: newCanvas, title: 'Visual Diff' });
+                }} 
+              />
+            ) : (
+              <div className="no-image-placeholder">N/A</div>
+            )}
           </div>
         </div>
       </div>
       {error && <div className="diff-error">{error}</div>}
+
+      {modalImage && (
+        <div className="image-modal-overlay" onClick={() => setModalImage(null)}>
+          <div className="image-modal-content" onClick={e => e.stopPropagation()}>
+            <span className="image-modal-title">{modalImage.title}</span>
+            {modalImage.url ? (
+              <img src={modalImage.url} alt={modalImage.title} />
+            ) : modalImage.canvas ? (
+              <div ref={el => {
+                if (el && modalImage.canvas && !el.hasChildNodes()) {
+                  el.appendChild(modalImage.canvas);
+                }
+              }} />
+            ) : null}
+            <button className="close-modal" onClick={() => setModalImage(null)}>
+              <X size={32} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
