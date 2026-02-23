@@ -7,6 +7,9 @@
 
 ![](docs/screenshot.png)
 
+Visual diff is also supported.
+![](docs/visual_diff_screenshot.png)
+
 ## 🏌️‍♀️Key Features
 
 * **Multi-Repo Visualization**: Monitor the status of multiple Git repositories from a single, unified dashboard.
