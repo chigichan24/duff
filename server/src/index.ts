@@ -4,10 +4,6 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { simpleGit, SimpleGit } from 'simple-git';
-import { execFile } from 'child_process';
-import { promisify } from 'util';
-
-const execFilePromise = promisify(execFile);
 const app = express();
 const port = process.env.PORT || 3001;
 const REPO_FILE = path.join(__dirname, '../repositories.json');
@@ -147,20 +143,14 @@ app.get('/api/repositories/:id/content', async (req, res) => {
   if (!file) return res.status(400).json({ error: 'File path is required' });
 
   const filePath = file as string;
-  let repoPath = path.resolve(repo.path);
-  try {
-    if (fs.existsSync(repoPath)) {
-      repoPath = fs.realpathSync(repoPath);
-    }
-  } catch (e) {}
-
-  let fullPath = path.resolve(repoPath, filePath);
+  const repoPath = path.resolve(repo.path);
+  const fullPath = path.resolve(repoPath, filePath);
 
   // Security check: ensure path is within repo
   const relative = path.relative(repoPath, fullPath);
   const isSafe = relative && !relative.startsWith('..') && !path.isAbsolute(relative);
-  
-  if (!isSafe && relative !== '') {
+
+  if (!isSafe) {
     return res.status(403).json({ error: 'Access denied' });
   }
 
@@ -181,13 +171,10 @@ app.get('/api/repositories/:id/content', async (req, res) => {
   try {
     if (version === 'HEAD') {
       try {
-        const { stdout } = await execFilePromise('git', ['show', `HEAD:${gitPath}`], { 
-          cwd: repo.path, 
-          encoding: 'buffer',
-          maxBuffer: 10 * 1024 * 1024 // 10MB limit
-        });
+        const git = simpleGit(repo.path) as SimpleGit & { binary(commands: string[]): Promise<Buffer> };
+        const data = await git.binary(['show', `HEAD:${gitPath}`]);
         res.setHeader('Content-Type', contentType);
-        res.send(stdout);
+        res.send(data);
       } catch (err) {
         res.status(404).json({ error: 'File not found in HEAD' });
       }
