@@ -9,6 +9,8 @@ on:
 jobs:
   test-server:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -31,3 +33,7 @@ jobs:
       - name: Check coverage
         run: npm run test:coverage
         working-directory: server
+
+      - name: Update Coverage Badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: bash scripts/update-coverage-badge.sh
