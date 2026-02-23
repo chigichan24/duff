@@ -8,6 +8,8 @@ server/repositories.json
 dist/
 server/dist/
 client/dist/
+coverage/
+server/coverage/
 
 # IDE
 .vscode/
@@ -26,3 +28,6 @@ Thumbs.db
 # Frontend specific
 client/dev-dist
 client/stats.html
+
+# Work Logging
+history.log
