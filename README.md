@@ -1,6 +1,6 @@
 # ⛳️ duff
 
-![build status](https://github.com/chigichan24/duff/actions/workflows/ci.yml/badge.svg) ![Coverage](https://img.shields.io/badge/coverage-97.22%25-green)
+![build status](https://github.com/chigichan24/duff/actions/workflows/ci.yml/badge.svg)
 
 
 **⛳️ duff** is a specialized tool designed to visualize progress across multiple repositories, focusing specifically on tracking status through the familiar `git diff` format.
