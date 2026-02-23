@@ -4,7 +4,10 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { simpleGit, SimpleGit } from 'simple-git';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 
+const execFilePromise = promisify(execFile);
 const app = express();
 const port = process.env.PORT || 3001;
 const REPO_FILE = path.join(__dirname, '../repositories.json');
@@ -125,13 +128,86 @@ app.get('/api/repositories/:id/diff', async (req, res) => {
 
   try {
     const git: SimpleGit = simpleGit(repo.path);
-    // Get diff against working tree
     const args = ['--no-color', 'HEAD'];
     if (file) args.push('--', file as string);
     
     const diff = await git.diff(args);
     res.json({ diff });
   } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/repositories/:id/content', async (req, res) => {
+  const { id } = req.params;
+  const { file, version } = req.query;
+  const repo = getRepositories().find(r => r.id === id);
+  
+  if (!repo) return res.status(404).json({ error: 'Repository not found' });
+  if (!file) return res.status(400).json({ error: 'File path is required' });
+
+  const filePath = file as string;
+  let repoPath = path.resolve(repo.path);
+  try {
+    if (fs.existsSync(repoPath)) {
+      repoPath = fs.realpathSync(repoPath);
+    }
+  } catch (e) {}
+
+  let fullPath = path.resolve(repoPath, filePath);
+  // Do not use realpathSync for fullPath yet, as it might not exist if it's HEAD version or deleted file
+
+  console.log(`Content request: repoId=${id}, filePath=${filePath}`);
+  console.log(`Resolved: repoPath=${repoPath}, fullPath=${fullPath}`);
+
+  // Security check: ensure path is within repo
+  const relative = path.relative(repoPath, fullPath);
+  const isSafe = relative && !relative.startsWith('..') && !path.isAbsolute(relative);
+  
+  if (!isSafe && relative !== '') {
+    console.error(`Security violation attempt: ${fullPath} is not in ${repoPath}`);
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  const ext = path.extname(filePath).toLowerCase();
+  const mimeTypes: { [key: string]: string } = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml'
+  };
+  const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+  // Normalize path for git (always relative to repo root, no ./ or / prefix)
+  const gitPath = relative.replace(/\\/g, '/');
+
+  try {
+    if (version === 'HEAD') {
+      try {
+        const { stdout } = await execFilePromise('git', ['show', `HEAD:${gitPath}`], { 
+          cwd: repo.path, 
+          encoding: 'buffer',
+          maxBuffer: 10 * 1024 * 1024 // 10MB limit
+        });
+        res.setHeader('Content-Type', contentType);
+        res.send(stdout);
+      } catch (err) {
+        console.error(`Git show error for ${gitPath}:`, err);
+        res.status(404).json({ error: 'File not found in HEAD' });
+      }
+    } else {
+      const fullPathToRead = path.resolve(repoPath, gitPath);
+      if (!fs.existsSync(fullPathToRead)) {
+        return res.status(404).json({ error: 'File not found in working tree' });
+      }
+      const data = fs.readFileSync(fullPathToRead);
+      res.setHeader('Content-Type', contentType);
+      res.send(data);
+    }
+  } catch (error: any) {
+    console.error(`Content API error for repo ${id} file ${filePath}:`, error);
     res.status(500).json({ error: error.message });
   }
 });
