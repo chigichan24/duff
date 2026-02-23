@@ -8,6 +8,8 @@ server/repositories.json
 dist/
 server/dist/
 client/dist/
+coverage/
+server/coverage/
 
 # IDE
 .vscode/
