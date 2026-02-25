@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Plus, Trash2, RefreshCw, GitBranch, Settings, X, GripVertical } from 'lucide-react';
+import { Search, Plus, Trash2, RefreshCw, GitBranch, Settings, X, GripVertical, Copy } from 'lucide-react';
 import * as Diff2Html from 'diff2html';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import type { DropResult, DroppableProps } from '@hello-pangea/dnd';
@@ -22,6 +22,17 @@ export const StrictModeDroppable = ({ children, ...props }: DroppableProps) => {
   }
   return <Droppable {...props}>{children}</Droppable>;
 };
+
+function splitFilePath(filePath: string): { dir: string; name: string } {
+  const lastSlash = filePath.lastIndexOf('/');
+  if (lastSlash === -1) {
+    return { dir: '', name: filePath };
+  }
+  return {
+    dir: filePath.substring(0, lastSlash + 1),
+    name: filePath.substring(lastSlash + 1),
+  };
+}
 
 const isImageFile = (filename: string | null) => {
   if (!filename) return false;
@@ -458,15 +469,31 @@ function App() {
                   >
                     All Changes
                   </li>
-                  {filteredFiles.map(file => (
-                    <li 
-                      key={file} 
-                      className={selectedFile === file ? 'selected' : ''}
-                      onClick={() => setSelectedFile(file)}
-                    >
-                      {file}
-                    </li>
-                  ))}
+                  {filteredFiles.map(file => {
+                    const { dir, name } = splitFilePath(file);
+                    return (
+                      <li
+                        key={file}
+                        className={selectedFile === file ? 'selected' : ''}
+                        onClick={() => setSelectedFile(file)}
+                      >
+                        <span className="file-path-text">
+                          {dir && <span className="file-dir">{dir}</span>}
+                          <span className="file-name">{name}</span>
+                        </span>
+                        <button
+                          className="copy-filename-btn"
+                          title={`Copy filename: ${name}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(name);
+                          }}
+                        >
+                          <Copy size={12} />
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
 

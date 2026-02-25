@@ -296,9 +296,54 @@ body, html, #root {
   border-radius: 6px;
   cursor: pointer;
   font-size: 0.85rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-all;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+.file-list li .file-path-text {
+  flex: 1;
+}
+
+.file-list li .file-dir {
+  color: var(--text-muted);
+}
+
+.file-list li.selected .file-dir {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.copy-filename-btn {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+  margin-top: 1px;
+}
+
+.file-list li:hover .copy-filename-btn {
+  opacity: 1;
+}
+
+.copy-filename-btn:hover {
+  background-color: rgba(0, 0, 0, 0.08);
+}
+
+.file-list li.selected .copy-filename-btn {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.file-list li.selected .copy-filename-btn:hover {
+  background-color: rgba(255, 255, 255, 0.15);
 }
 
 .file-list li:hover {
