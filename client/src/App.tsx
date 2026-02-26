@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Plus, Trash2, RefreshCw, GitBranch, Settings, X, GripVertical, Copy } from 'lucide-react';
+import { Search, Plus, Trash2, RefreshCw, GitBranch, Settings, X, GripVertical, Copy, Folder, FolderGit2, ChevronUp } from 'lucide-react';
 import * as Diff2Html from 'diff2html';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import type { DropResult, DroppableProps } from '@hello-pangea/dnd';
@@ -219,6 +219,15 @@ function App() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [newRepoPath, setNewRepoPath] = useState('');
+  const [browseMode, setBrowseMode] = useState(true);
+  const [browsePath, setBrowsePath] = useState('');
+  const [browseEntries, setBrowseEntries] = useState<Array<{
+    name: string; path: string; isGitRepo: boolean;
+  }>>([]);
+  const [browseParentPath, setBrowseParentPath] = useState<string | null>(null);
+  const [showHidden, setShowHidden] = useState(false);
+  const [browseLoading, setBrowseLoading] = useState(false);
+  const [browseError, setBrowseError] = useState('');
   const [activeDiff, setActiveDiff] = useState<string>('');
   const [globalInterval, setGlobalInterval] = useState(30);
   const [sidebarWidth, setSidebarWidth] = useState(300);
@@ -320,8 +329,7 @@ function App() {
     }
   };
 
-  const handleAddRepo = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitAddRepo = async () => {
     try {
       const res = await fetch('http://localhost:3001/api/repositories', {
         method: 'POST',
@@ -336,6 +344,43 @@ function App() {
     } catch (err) {
       console.error('Failed to add repo', err);
     }
+  };
+
+  const handleAddRepo = (e: React.FormEvent) => {
+    e.preventDefault();
+    submitAddRepo();
+  };
+
+  const fetchBrowseEntries = async (dir?: string, hidden?: boolean) => {
+    setBrowseLoading(true);
+    setBrowseError('');
+    try {
+      const params = new URLSearchParams();
+      if (dir) params.set('dir', dir);
+      params.set('showHidden', String(hidden ?? showHidden));
+      const res = await fetch(`http://localhost:3001/api/browse?${params}`);
+      if (!res.ok) {
+        const data = await res.json();
+        setBrowseError(data.error || 'Failed to browse');
+        return;
+      }
+      const data = await res.json();
+      setBrowsePath(data.currentPath);
+      setBrowseEntries(data.entries);
+      setBrowseParentPath(data.parentPath);
+    } catch (err) {
+      setBrowseError('Failed to connect to server');
+    } finally {
+      setBrowseLoading(false);
+    }
+  };
+
+  const openAddModal = () => {
+    setShowAddModal(true);
+    setBrowseMode(true);
+    setNewRepoPath('');
+    setBrowseError('');
+    fetchBrowseEntries();
   };
 
   const handleDeleteRepo = async (id: string, e: React.MouseEvent) => {
@@ -371,7 +416,7 @@ function App() {
           >
             ⛳️ Duff
           </h2>
-          <button onClick={() => setShowAddModal(true)} className="icon-btn" title="Add Repository">
+          <button onClick={openAddModal} className="icon-btn" title="Add Repository">
             <Plus size={20} />
           </button>
         </div>
@@ -531,21 +576,124 @@ function App() {
 
       {showAddModal && (
         <div className="modal-overlay">
-          <div className="modal">
-            <h3>Add Repository</h3>
-            <form onSubmit={handleAddRepo}>
-              <input 
-                type="text" 
-                placeholder="/absolute/path/to/repo" 
-                value={newRepoPath}
-                onChange={(e) => setNewRepoPath(e.target.value)}
-                autoFocus
-              />
-              <div className="modal-actions">
-                <button type="button" onClick={() => setShowAddModal(false)}>Cancel</button>
-                <button type="submit" className="primary">Add</button>
+          <div className="modal modal-browse">
+            <div className="modal-header-row">
+              <h3>Add Repository</h3>
+              <button className="icon-btn" onClick={() => setShowAddModal(false)}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="browse-tabs">
+              <button
+                className={`browse-tab ${browseMode ? 'active' : ''}`}
+                onClick={() => { setBrowseMode(true); if (!browsePath) fetchBrowseEntries(); }}
+              >
+                Browse
+              </button>
+              <button
+                className={`browse-tab ${!browseMode ? 'active' : ''}`}
+                onClick={() => setBrowseMode(false)}
+              >
+                Enter Path
+              </button>
+            </div>
+
+            {browseMode ? (
+              <div className="browse-container">
+                <div className="browse-current-path">
+                  <span className="browse-path-label">{browsePath}</span>
+                  <label className="browse-hidden-toggle">
+                    <input
+                      type="checkbox"
+                      checked={showHidden}
+                      onChange={(e) => {
+                        setShowHidden(e.target.checked);
+                        fetchBrowseEntries(browsePath, e.target.checked);
+                      }}
+                    />
+                    Show hidden
+                  </label>
+                </div>
+
+                {browseError && <div className="browse-error">{browseError}</div>}
+
+                <div className="browse-list">
+                  {browseLoading ? (
+                    <div className="browse-loading">Loading...</div>
+                  ) : (
+                    <>
+                      {browseParentPath && (
+                        <div
+                          className="browse-item browse-parent"
+                          onClick={() => fetchBrowseEntries(browseParentPath)}
+                        >
+                          <ChevronUp size={16} className="browse-item-icon" />
+                          <span className="browse-item-name">Parent Directory</span>
+                        </div>
+                      )}
+                      {browseEntries.map((entry) => (
+                        <div
+                          key={entry.path}
+                          className={`browse-item ${entry.isGitRepo ? 'browse-git-repo' : ''} ${newRepoPath === entry.path ? 'browse-selected' : ''}`}
+                          onClick={() => setNewRepoPath(entry.path)}
+                          onDoubleClick={() => fetchBrowseEntries(entry.path)}
+                        >
+                          {entry.isGitRepo ? (
+                            <FolderGit2 size={16} className="browse-item-icon browse-icon-git" />
+                          ) : (
+                            <Folder size={16} className="browse-item-icon" />
+                          )}
+                          <span className="browse-item-name">{entry.name}</span>
+                          {entry.isGitRepo && (
+                            <span className="browse-git-badge">
+                              <GitBranch size={12} /> Git
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                      {browseEntries.length === 0 && !browseLoading && (
+                        <div className="browse-empty">No subdirectories found</div>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                <div className="browse-footer">
+                  <input
+                    type="text"
+                    className="browse-selected-path"
+                    value={newRepoPath}
+                    onChange={(e) => setNewRepoPath(e.target.value)}
+                    placeholder="Selected path or type manually..."
+                  />
+                  <div className="modal-actions">
+                    <button type="button" onClick={() => setShowAddModal(false)}>Cancel</button>
+                    <button
+                      className="primary"
+                      disabled={!newRepoPath}
+                      onClick={submitAddRepo}
+                    >
+                      Add
+                    </button>
+                  </div>
+                </div>
               </div>
-            </form>
+            ) : (
+              <form onSubmit={handleAddRepo}>
+                <input
+                  type="text"
+                  placeholder="/absolute/path/to/repo"
+                  value={newRepoPath}
+                  onChange={(e) => setNewRepoPath(e.target.value)}
+                  autoFocus
+                />
+                <div className="modal-actions">
+                  <button type="button" onClick={() => setShowAddModal(false)}>Cancel</button>
+                  <button type="submit" className="primary">Add</button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
       )}

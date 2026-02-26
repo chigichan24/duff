@@ -195,6 +195,91 @@ describe('API Server', () => {
     });
   });
 
+  describe('GET /api/browse', () => {
+    it('should return directory entries for home directory when no dir specified', async () => {
+      const mockDirents = [
+        { name: 'Documents', isDirectory: () => true },
+        { name: 'Downloads', isDirectory: () => true },
+        { name: 'file.txt', isDirectory: () => false },
+        { name: '.hidden', isDirectory: () => true },
+      ];
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.statSync).mockReturnValue({ isDirectory: () => true } as any);
+      vi.mocked(fs.readdirSync).mockReturnValue(mockDirents as any);
+
+      const res = await request(app).get('/api/browse');
+      expect(res.status).toBe(200);
+      expect(res.body.currentPath).toBeDefined();
+      expect(res.body.entries).toBeDefined();
+      // Files should be excluded, only directories
+      const names = res.body.entries.map((e: any) => e.name);
+      expect(names).toContain('Documents');
+      expect(names).toContain('Downloads');
+      expect(names).not.toContain('file.txt');
+      // Hidden folders should be excluded by default
+      expect(names).not.toContain('.hidden');
+    });
+
+    it('should include hidden directories when showHidden=true', async () => {
+      const mockDirents = [
+        { name: 'Documents', isDirectory: () => true },
+        { name: '.hidden', isDirectory: () => true },
+      ];
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.statSync).mockReturnValue({ isDirectory: () => true } as any);
+      vi.mocked(fs.readdirSync).mockReturnValue(mockDirents as any);
+
+      const res = await request(app).get('/api/browse').query({ showHidden: 'true' });
+      expect(res.status).toBe(200);
+      const names = res.body.entries.map((e: any) => e.name);
+      expect(names).toContain('.hidden');
+    });
+
+    it('should return 400 if directory does not exist', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(false);
+
+      const res = await request(app).get('/api/browse').query({ dir: '/non/existent' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Directory does not exist');
+    });
+
+    it('should return 400 if path is not a directory', async () => {
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.statSync).mockReturnValue({ isDirectory: () => false } as any);
+
+      const res = await request(app).get('/api/browse').query({ dir: '/some/file.txt' });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('Path is not a directory');
+    });
+
+    it('should detect git repositories via .git folder', async () => {
+      const mockDirents = [
+        { name: 'my-repo', isDirectory: () => true },
+      ];
+      vi.mocked(fs.existsSync).mockImplementation((p) => {
+        if (typeof p === 'string' && p.endsWith('.git')) return true;
+        return true;
+      });
+      vi.mocked(fs.statSync).mockReturnValue({ isDirectory: () => true } as any);
+      vi.mocked(fs.readdirSync).mockReturnValue(mockDirents as any);
+
+      const res = await request(app).get('/api/browse').query({ dir: '/home/user' });
+      expect(res.status).toBe(200);
+      expect(res.body.entries[0].isGitRepo).toBe(true);
+    });
+
+    it('should return null parentPath for root directory', async () => {
+      const mockDirents: any[] = [];
+      vi.mocked(fs.existsSync).mockReturnValue(true);
+      vi.mocked(fs.statSync).mockReturnValue({ isDirectory: () => true } as any);
+      vi.mocked(fs.readdirSync).mockReturnValue(mockDirents as any);
+
+      const res = await request(app).get('/api/browse').query({ dir: '/' });
+      expect(res.status).toBe(200);
+      expect(res.body.parentPath).toBeNull();
+    });
+  });
+
   describe('GET /api/repositories/:id/status', () => {
     it('should return 404 if repository not found', async () => {
       vi.mocked(fs.existsSync).mockReturnValue(true);

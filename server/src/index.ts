@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import crypto from 'crypto';
 import { simpleGit, SimpleGit } from 'simple-git';
 const app = express();
@@ -91,6 +92,52 @@ app.post('/api/repositories/reorder', (req, res) => {
 
   saveRepositories(reorderedRepos);
   res.json(reorderedRepos);
+});
+
+app.get('/api/browse', (req, res) => {
+  const requestedDir = (req.query.dir as string) || os.homedir();
+  const showHidden = req.query.showHidden === 'true';
+
+  const resolvedDir = path.resolve(requestedDir);
+
+  if (!fs.existsSync(resolvedDir)) {
+    return res.status(400).json({ error: 'Directory does not exist' });
+  }
+
+  const stat = fs.statSync(resolvedDir);
+  if (!stat.isDirectory()) {
+    return res.status(400).json({ error: 'Path is not a directory' });
+  }
+
+  try {
+    const items = fs.readdirSync(resolvedDir, { withFileTypes: true });
+    const directories = items
+      .filter(item => item.isDirectory())
+      .filter(item => showHidden || !item.name.startsWith('.'))
+      .map(item => {
+        const fullPath = path.join(resolvedDir, item.name);
+        let isGitRepo = false;
+        try {
+          isGitRepo = fs.existsSync(path.join(fullPath, '.git'));
+        } catch { /* permission error */ }
+        return {
+          name: item.name,
+          path: fullPath,
+          isGitRepo,
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const parentPath = path.dirname(resolvedDir);
+
+    res.json({
+      currentPath: resolvedDir,
+      parentPath: parentPath !== resolvedDir ? parentPath : null,
+      entries: directories,
+    });
+  } catch (err: any) {
+    res.status(403).json({ error: 'Permission denied: ' + err.message });
+  }
 });
 
 app.get('/api/repositories/:id/status', async (req, res) => {
