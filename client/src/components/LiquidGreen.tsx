@@ -203,29 +203,31 @@ const LiquidSphere = () => {
       <Float speed={2} rotationIntensity={0.2} floatIntensity={0.3}>
         <group position={[0, -0.3, 2.5]}>
           <Text
-            font="https://fonts.gstatic.com/s/syncopate/v22/pe0pMIu6Y_wS9m97q3qO7fXv9K8.woff"
+            font="https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/syncopate/Syncopate-Bold.ttf"
             position={[0, 0.2, 0]}
-            fontSize={0.16}
+            fontSize={0.14}
             color="#2da44e"
             anchorX="center"
             anchorY="middle"
             maxWidth={4}
             textAlign="center"
             fillOpacity={0.8}
+            letterSpacing={0.1}
           >
             Ready to tee off?
             <meshBasicMaterial ref={textMaterialRef1} onBeforeCompile={(s) => onBeforeCompileText(s, textMaterialRef1)} />
           </Text>
           <Text
-            font="https://fonts.gstatic.com/s/syncopate/v22/pe0pMIu6Y_wS9m97q3qO7fXv9K8.woff"
+            font="https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/syncopate/Syncopate-Regular.ttf"
             position={[0, -0.05, 0]}
-            fontSize={0.06}
+            fontSize={0.05}
             color="#42b883"
             anchorX="center"
             anchorY="middle"
             maxWidth={3}
             textAlign="center"
             fillOpacity={0.6}
+            letterSpacing={0.05}
           >
             Select a repository from the bag to start viewing diffs!
             <meshBasicMaterial ref={textMaterialRef2} onBeforeCompile={(s) => onBeforeCompileText(s, textMaterialRef2)} />
