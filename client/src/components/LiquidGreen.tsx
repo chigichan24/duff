@@ -152,9 +152,16 @@ const LiquidSphere = () => {
     <Float speed={1.5} rotationIntensity={0.5} floatIntensity={0.5}>
       <Sphere 
         args={[2, 128, 128]} 
-        pointerEvents="auto"
-        onClick={() => {
-          clickBoost.current = 2.0; // Violent reaction on click
+        onPointerOver={() => {
+          console.log('Sphere: Mouse Over');
+        }}
+        onPointerOut={() => {
+          console.log('Sphere: Mouse Out');
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          console.log('Sphere: Clicked!');
+          clickBoost.current = 4.0; // Even more violent for testing
         }}
       >
         <meshPhysicalMaterial
