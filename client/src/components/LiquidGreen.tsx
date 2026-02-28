@@ -79,7 +79,6 @@ const LiquidSphere = () => {
   const materialRef = useRef<THREE.MeshPhysicalMaterial>(null);
   const textMaterialRef1 = useRef<THREE.MeshBasicMaterial>(null);
   const textMaterialRef2 = useRef<THREE.MeshBasicMaterial>(null);
-  const emojiMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
   
   const hoverValue = useRef(0);
   const clickBoost = useRef(0);
@@ -175,7 +174,6 @@ const LiquidSphere = () => {
     updateUniforms(materialRef);
     updateUniforms(textMaterialRef1);
     updateUniforms(textMaterialRef2);
-    updateUniforms(emojiMaterialRef);
   });
 
   return (
@@ -202,21 +200,11 @@ const LiquidSphere = () => {
         </Sphere>
       </Float>
 
-      <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>
-        <group position={[0, 0, 2.5]}>
-          <Text
-            position={[0, 1, 0]}
-            fontSize={0.8}
-            color="#1f2328"
-            anchorX="center"
-            anchorY="middle"
-          >
-            🏌️‍♂️
-            <meshBasicMaterial ref={emojiMaterialRef} onBeforeCompile={(s) => onBeforeCompileText(s, emojiMaterialRef)} />
-          </Text>
+      <Float speed={2} rotationIntensity={0.2} floatIntensity={0.3}>
+        <group position={[0, -0.3, 2.5]}>
           <Text
             position={[0, 0.2, 0]}
-            fontSize={0.4}
+            fontSize={0.18}
             color="#1f2328"
             anchorX="center"
             anchorY="middle"
@@ -227,8 +215,8 @@ const LiquidSphere = () => {
             <meshBasicMaterial ref={textMaterialRef1} onBeforeCompile={(s) => onBeforeCompileText(s, textMaterialRef1)} />
           </Text>
           <Text
-            position={[0, -0.4, 0]}
-            fontSize={0.15}
+            position={[0, -0.05, 0]}
+            fontSize={0.07}
             color="#656d76"
             anchorX="center"
             anchorY="middle"
