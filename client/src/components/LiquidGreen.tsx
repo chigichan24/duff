@@ -112,9 +112,9 @@ const LiquidSphere = () => {
         float combined = noise * 0.6 + noise2 * 0.4;
         
         // Interaction: Hover increases turbulence and amplitude
-        float hoverIntensity = 0.5 + uHover * 2.0;
+        float hoverIntensity = 0.5 + uHover * 1.0;
         
-        float displacement = combined * (0.4 * hoverIntensity);
+        float displacement = combined * (0.25 * hoverIntensity);
         vDisplacement = displacement;
         
         transformed = position + normal * displacement;
@@ -131,7 +131,7 @@ const LiquidSphere = () => {
       `
         #include <color_fragment>
         // Subtle color shift on hover
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.8, 0.4), uHover * 0.2);
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.8, 0.4), uHover * 0.1);
       `
     );
     
@@ -155,11 +155,11 @@ const LiquidSphere = () => {
       hoverValue.current = THREE.MathUtils.lerp(hoverValue.current, targetHover, 0.15);
       
       // Combine hover and click boost (clamped)
-      const totalInteraction = Math.min(4.0, hoverValue.current + clickBoost.current);
+      const totalInteraction = Math.min(2.0, hoverValue.current + clickBoost.current);
       
       uniforms.uHover.value = totalInteraction;
-      // Faster time scaling based on interaction, multiplied significantly by click
-      uniforms.uTime.value = clock.getElapsedTime() * (1.0 + totalInteraction * 3.0);
+      // Faster time scaling based on interaction
+      uniforms.uTime.value = clock.getElapsedTime() * (1.0 + totalInteraction * 1.0);
     }
   });
 
@@ -176,7 +176,7 @@ const LiquidSphere = () => {
         onClick={(e) => {
           e.stopPropagation();
           console.log('Sphere: Clicked!');
-          clickBoost.current = 4.0; // Violent reaction on click
+          clickBoost.current = 1.5; // Toned down from 4.0
         }}
       >
         <meshPhysicalMaterial
