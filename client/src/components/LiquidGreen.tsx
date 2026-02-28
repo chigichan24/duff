@@ -205,7 +205,7 @@ const LiquidSphere = () => {
           <Text
             fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
             position={[0, 0.2, 0]}
-            fontSize={0.24}
+            fontSize={0.18}
             color="#1f2328"
             anchorX="center"
             anchorY="middle"
@@ -219,8 +219,8 @@ const LiquidSphere = () => {
           </Text>
           <Text
             fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
-            position={[0, -0.08, 0]}
-            fontSize={0.09}
+            position={[0, -0.06, 0]}
+            fontSize={0.07}
             color="#656d76"
             anchorX="center"
             anchorY="middle"
