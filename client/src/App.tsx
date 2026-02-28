@@ -6,6 +6,7 @@ import type { DropResult, DroppableProps } from '@hello-pangea/dnd';
 import pixelmatch from 'pixelmatch';
 import 'diff2html/bundles/css/diff2html.min.css';
 import './App.css';
+import LiquidGreen from './components/LiquidGreen';
 
 // Custom Droppable to handle React mounting
 export const StrictModeDroppable = ({ children, ...props }: DroppableProps) => {
@@ -593,8 +594,11 @@ function App() {
             </div>
           </>
         ) : (
-          <div className="welcome">
-            <div className="humor-message">
+          <div className="welcome" style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'center', alignItems: 'center', position: 'relative', overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 0 }}>
+              <LiquidGreen />
+            </div>
+            <div className="humor-message" style={{ position: 'relative', zIndex: 1, pointerEvents: 'none', background: 'rgba(255,255,255,0.7)', padding: '20px', borderRadius: '16px', backdropFilter: 'blur(4px)' }}>
               <span className="emoji">🏌️‍♂️</span>
               <p>Ready to tee off?</p>
               <small>Select a repository from the bag to start viewing diffs!</small>
