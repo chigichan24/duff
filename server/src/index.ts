@@ -218,8 +218,8 @@ app.get('/api/repositories/:id/content', async (req, res) => {
   try {
     if (version === 'HEAD') {
       try {
-        const git = simpleGit(repo.path) as SimpleGit & { binary(commands: string[]): Promise<Buffer> };
-        const data = await git.binary(['show', `HEAD:${gitPath}`]);
+        const git = simpleGit(repo.path);
+        const data = await git.binaryCatFile(['-p', `HEAD:${gitPath}`]);
         res.setHeader('Content-Type', contentType);
         res.send(data);
       } catch (err) {
