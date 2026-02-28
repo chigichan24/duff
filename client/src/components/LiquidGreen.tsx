@@ -85,49 +85,64 @@ float snoise(vec3 v) {
 }
 `;
 
-const onBeforeCompile = (shader: any) => {
-  shader.uniforms.uTime = { value: 0 };
-  shader.uniforms.uHover = { value: 0 };
-
-  shader.vertexShader = `
-    uniform float uTime;
-    uniform float uHover;
-    varying float vDisplacement;
-    ${noiseGLSL}
-    ${shader.vertexShader}
-  `;
-
-  shader.vertexShader = shader.vertexShader.replace(
-    '#include <begin_vertex>',
-    `
-      #include <begin_vertex>
-      
-      float noise = snoise(vec3(position * 0.8 + uTime * 0.3));
-      float noise2 = snoise(vec3(position * 2.0 - uTime * 0.2));
-      float combined = noise * 0.6 + noise2 * 0.4;
-      
-      // Interaction: Hover increases turbulence and amplitude
-      float hoverIntensity = 0.5 + uHover * 2.0;
-      
-      float displacement = combined * (0.4 * hoverIntensity);
-      vDisplacement = displacement;
-      
-      transformed = position + normal * displacement;
-    `
-  );
-  
-  // Store reference to uniforms for updates
-  if (!shader.userData) shader.userData = {};
-  shader.userData.uniforms = shader.uniforms;
-};
-
 const LiquidSphere = () => {
   const materialRef = useRef<THREE.MeshPhysicalMaterial>(null);
   const hoverValue = useRef(0);
   const clickBoost = useRef(0);
+
+  const onBeforeCompile = (shader: any) => {
+    shader.uniforms.uTime = { value: 0 };
+    shader.uniforms.uHover = { value: 0 };
+
+    shader.vertexShader = `
+      uniform float uTime;
+      uniform float uHover;
+      varying float vDisplacement;
+      ${noiseGLSL}
+      ${shader.vertexShader}
+    `;
+
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      `
+        #include <begin_vertex>
+        
+        float noise = snoise(vec3(position * 0.8 + uTime * 0.3));
+        float noise2 = snoise(vec3(position * 2.0 - uTime * 0.2));
+        float combined = noise * 0.6 + noise2 * 0.4;
+        
+        // Interaction: Hover increases turbulence and amplitude
+        float hoverIntensity = 0.5 + uHover * 2.0;
+        
+        float displacement = combined * (0.4 * hoverIntensity);
+        vDisplacement = displacement;
+        
+        transformed = position + normal * displacement;
+      `
+    );
+
+    shader.fragmentShader = `
+      uniform float uHover;
+      ${shader.fragmentShader}
+    `;
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <color_fragment>',
+      `
+        #include <color_fragment>
+        // Subtle color shift on hover
+        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.8, 0.4), uHover * 0.2);
+      `
+    );
+    
+    // Crucial: attach uniforms to the material's userData so useFrame can see them
+    if (materialRef.current) {
+      materialRef.current.userData.uniforms = shader.uniforms;
+    }
+  };
   
   useFrame(({ clock, mouse }) => {
-    // Access uniforms via userData which we set in onBeforeCompile
+    // Access uniforms via the material's userData
     const uniforms = materialRef.current?.userData?.uniforms;
     if (uniforms) {
       const dist = Math.sqrt(mouse.x * mouse.x + mouse.y * mouse.y);
@@ -140,7 +155,7 @@ const LiquidSphere = () => {
       hoverValue.current = THREE.MathUtils.lerp(hoverValue.current, targetHover, 0.15);
       
       // Combine hover and click boost (clamped)
-      const totalInteraction = Math.min(2.5, hoverValue.current + clickBoost.current);
+      const totalInteraction = Math.min(4.0, hoverValue.current + clickBoost.current);
       
       uniforms.uHover.value = totalInteraction;
       // Faster time scaling based on interaction, multiplied significantly by click
@@ -161,7 +176,7 @@ const LiquidSphere = () => {
         onClick={(e) => {
           e.stopPropagation();
           console.log('Sphere: Clicked!');
-          clickBoost.current = 4.0; // Even more violent for testing
+          clickBoost.current = 4.0; // Violent reaction on click
         }}
       >
         <meshPhysicalMaterial
