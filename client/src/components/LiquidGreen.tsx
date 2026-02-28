@@ -129,16 +129,17 @@ const LiquidSphere = () => {
     // Access uniforms via userData which we set in onBeforeCompile
     const uniforms = materialRef.current?.userData?.uniforms;
     if (uniforms) {
-      uniforms.uTime.value = clock.getElapsedTime();
-      
       const dist = Math.sqrt(mouse.x * mouse.x + mouse.y * mouse.y);
-      const targetHover = Math.max(0, 1.0 - dist * 0.8);
-      hoverValue.current = THREE.MathUtils.lerp(hoverValue.current, targetHover, 0.05);
+      const targetHover = Math.max(0, 1.0 - dist * 0.6);
+      
+      // Snappier reaction with 0.15 lerp
+      hoverValue.current = THREE.MathUtils.lerp(hoverValue.current, targetHover, 0.15);
       
       uniforms.uHover.value = hoverValue.current;
+      // Faster time scaling based on interaction
+      uniforms.uTime.value = clock.getElapsedTime() * (1.0 + hoverValue.current * 1.5);
     }
   });
-
   return (
     <Float speed={1.5} rotationIntensity={0.5} floatIntensity={0.5}>
       <Sphere args={[2, 128, 128]} pointerEvents="auto">
