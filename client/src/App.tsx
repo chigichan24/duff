@@ -212,6 +212,13 @@ const DiffView = ({ diff }: { diff: string }) => {
 
         return (
           <div key={idx} className="diff-file-section">
+            <header className="liquid-glass-header">
+              <div className="liquid-glass-bg"></div>
+              <div className="header-content">
+                <File size={16} />
+                <span className="file-name">{file.newName === '/dev/null' ? file.oldName : file.newName}</span>
+              </div>
+            </header>
             <div 
               className="diff-content"
               dangerouslySetInnerHTML={{ __html: fileDiffHtml }} 
