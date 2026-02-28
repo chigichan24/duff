@@ -594,7 +594,7 @@ function App() {
             </div>
           </>
         ) : (
-          <div className="welcome" style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'center', alignItems: 'center', position: 'relative', overflow: 'hidden' }}>
+          <div className="welcome" style={{ display: 'flex', flexDirection: 'column', flex: 1, width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center', position: 'relative', overflow: 'hidden' }}>
             <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 0 }}>
               <LiquidGreen />
             </div>
