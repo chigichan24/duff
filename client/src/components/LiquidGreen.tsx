@@ -117,6 +117,7 @@ const onBeforeCompile = (shader: any) => {
   );
   
   // Store reference to uniforms for updates
+  if (!shader.userData) shader.userData = {};
   shader.userData.uniforms = shader.uniforms;
 };
 
