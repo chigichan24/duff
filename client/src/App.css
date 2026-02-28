@@ -411,6 +411,54 @@ body, html, #root {
   bottom: 0;
   z-index: 0;
   pointer-events: none;
+  background: linear-gradient(135deg, rgba(45, 164, 78, 0.05) 0%, rgba(9, 105, 218, 0.05) 100%);
+  overflow: hidden;
+}
+
+.liquid-glass-bg::before,
+.liquid-glass-bg::after {
+  content: '';
+  position: absolute;
+  width: 150px;
+  height: 80px;
+  filter: blur(25px);
+  opacity: 0.6;
+  z-index: -1;
+}
+
+.liquid-glass-bg::before {
+  top: -20px;
+  left: 20%;
+  background: rgba(45, 164, 78, 0.25); /* Fairway Green */
+  border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%;
+  animation: blob-float 15s ease-in-out infinite alternate;
+}
+
+.liquid-glass-bg::after {
+  bottom: -30px;
+  right: 15%;
+  background: rgba(9, 105, 218, 0.2); /* Water Hazard Blue */
+  border-radius: 60% 40% 30% 70% / 50% 30% 70% 40%;
+  animation: blob-float 12s ease-in-out infinite alternate-reverse;
+}
+
+@keyframes blob-float {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(1);
+    border-radius: 40% 60% 70% 30% / 40% 50% 60% 50%;
+  }
+  33% {
+    transform: translate(40px, 10px) rotate(10deg) scale(1.1);
+    border-radius: 60% 40% 30% 70% / 50% 30% 70% 40%;
+  }
+  66% {
+    transform: translate(-20px, 20px) rotate(-10deg) scale(0.9);
+    border-radius: 30% 70% 40% 60% / 70% 40% 30% 60%;
+  }
+  100% {
+    transform: translate(10px, -15px) rotate(5deg) scale(1.05);
+    border-radius: 50% 50% 60% 40% / 40% 60% 50% 60%;
+  }
 }
 
 /* diff2html custom styling - sticky line numbers */
