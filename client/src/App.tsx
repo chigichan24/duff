@@ -215,8 +215,18 @@ const DiffView = ({ diff }: { diff: string }) => {
             <header className="liquid-glass-header">
               <div className="liquid-glass-bg"></div>
               <div className="header-content">
-                <File size={16} />
+                <File size={16} className="file-icon" />
                 <span className="file-name">{file.newName === '/dev/null' ? file.oldName : file.newName}</span>
+                <button
+                  className="copy-filename-btn"
+                  title="Copy path"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(file.newName === '/dev/null' ? file.oldName : file.newName);
+                  }}
+                >
+                  <Copy size={12} />
+                </button>
               </div>
             </header>
             <div 

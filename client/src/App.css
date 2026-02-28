@@ -401,6 +401,21 @@ body, html, #root {
   color: var(--text-main);
   position: relative;
   z-index: 1;
+  width: 100%;
+}
+
+.file-icon {
+  color: var(--primary-color);
+  opacity: 0.8;
+}
+
+.file-name {
+  color: var(--text-main);
+  word-break: break-all;
+}
+
+.liquid-glass-header:hover .copy-filename-btn {
+  opacity: 1;
 }
 
 .liquid-glass-bg {
