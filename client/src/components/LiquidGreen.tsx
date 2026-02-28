@@ -124,6 +124,7 @@ const onBeforeCompile = (shader: any) => {
 const LiquidSphere = () => {
   const materialRef = useRef<THREE.MeshPhysicalMaterial>(null);
   const hoverValue = useRef(0);
+  const clickBoost = useRef(0);
   
   useFrame(({ clock, mouse }) => {
     // Access uniforms via userData which we set in onBeforeCompile
@@ -132,17 +133,30 @@ const LiquidSphere = () => {
       const dist = Math.sqrt(mouse.x * mouse.x + mouse.y * mouse.y);
       const targetHover = Math.max(0, 1.0 - dist * 0.6);
       
+      // Decay click boost
+      clickBoost.current = THREE.MathUtils.lerp(clickBoost.current, 0, 0.05);
+      
       // Snappier reaction with 0.15 lerp
       hoverValue.current = THREE.MathUtils.lerp(hoverValue.current, targetHover, 0.15);
       
-      uniforms.uHover.value = hoverValue.current;
-      // Faster time scaling based on interaction
-      uniforms.uTime.value = clock.getElapsedTime() * (1.0 + hoverValue.current * 1.5);
+      // Combine hover and click boost (clamped)
+      const totalInteraction = Math.min(2.5, hoverValue.current + clickBoost.current);
+      
+      uniforms.uHover.value = totalInteraction;
+      // Faster time scaling based on interaction, multiplied significantly by click
+      uniforms.uTime.value = clock.getElapsedTime() * (1.0 + totalInteraction * 3.0);
     }
   });
+
   return (
     <Float speed={1.5} rotationIntensity={0.5} floatIntensity={0.5}>
-      <Sphere args={[2, 128, 128]} pointerEvents="auto">
+      <Sphere 
+        args={[2, 128, 128]} 
+        pointerEvents="auto"
+        onClick={() => {
+          clickBoost.current = 2.0; // Violent reaction on click
+        }}
+      >
         <meshPhysicalMaterial
           ref={materialRef}
           color="#42b883" // Vue/Green-ish
