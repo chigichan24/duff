@@ -598,11 +598,6 @@ function App() {
             <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 0 }}>
               <LiquidGreen />
             </div>
-            <div className="humor-message" style={{ position: 'relative', zIndex: 1, pointerEvents: 'auto', userSelect: 'text', background: 'rgba(255,255,255,0.7)', padding: '20px', borderRadius: '16px', backdropFilter: 'blur(4px)', textAlign: 'center' }}>
-              <span className="emoji">🏌️‍♂️</span>
-              <p style={{ userSelect: 'text' }}>Ready to tee off?</p>
-              <small style={{ userSelect: 'text' }}>Select a repository from the bag to start viewing diffs!</small>
-            </div>
           </div>
         )}
       </main>

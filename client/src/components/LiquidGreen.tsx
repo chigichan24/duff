@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
-import { Sphere, Environment, Float } from '@react-three/drei';
+import { Sphere, Environment, Float, Text } from '@react-three/drei';
 import * as THREE from 'three';
 
 // Simplex 3D Noise implementation (Ashima Arts)
@@ -24,10 +24,6 @@ float snoise(vec3 v) {
   vec3 i1 = min( g.xyz, l.zxy );
   vec3 i2 = max( g.xyz, l.zxy );
 
-  //   x0 = x0 - 0.0 + 0.0 * C.xxx;
-  //   x1 = x0 - i1  + 1.0 * C.xxx;
-  //   x2 = x0 - i2  + 2.0 * C.xxx;
-  //   x3 = x0 - 1.0 + 3.0 * C.xxx;
   vec3 x1 = x0 - i1 + C.xxx;
   vec3 x2 = x0 - i2 + C.yyy; // 2.0*C.x = 1/3 = C.y
   vec3 x3 = x0 - D.yyy;      // -1.0+3.0*C.x = -0.5 = -D.y
@@ -39,8 +35,6 @@ float snoise(vec3 v) {
            + i.y + vec4(0.0, i1.y, i2.y, 1.0 )) 
            + i.x + vec4(0.0, i1.x, i2.x, 1.0 ));
 
-  // Gradients: 7x7 points over a square, mapped onto an octahedron.
-  // The ring size 17*17 = 289 is close to a multiple of 49 (49*6 = 294)
   float n_ = 0.142857142857; // 1.0/7.0
   vec3  ns = n_ * D.wyz - D.xzx;
 
@@ -56,8 +50,6 @@ float snoise(vec3 v) {
   vec4 b0 = vec4( x.xy, y.xy );
   vec4 b1 = vec4( x.zw, y.zw );
 
-  //vec4 s0 = vec4(lessThan(b0,0.0))*2.0 - 1.0;
-  //vec4 s1 = vec4(lessThan(b1,0.0))*2.0 - 1.0;
   vec4 s0 = floor(b0)*2.0 + 1.0;
   vec4 s1 = floor(b1)*2.0 + 1.0;
   vec4 sh = -step(h, vec4(0.0));
@@ -70,14 +62,12 @@ float snoise(vec3 v) {
   vec3 p2 = vec3(a1.xy,h.z);
   vec3 p3 = vec3(a1.zw,h.w);
 
-  //Normalise gradients
   vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
   p0 *= norm.x;
   p1 *= norm.y;
   p2 *= norm.z;
   p3 *= norm.w;
 
-  // Mix final noise value
   vec4 m = max(0.5 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
   m = m * m;
   return 105.0 * dot( m*m, vec4( dot(p0,x0), dot(p1,x1), 
@@ -87,10 +77,14 @@ float snoise(vec3 v) {
 
 const LiquidSphere = () => {
   const materialRef = useRef<THREE.MeshPhysicalMaterial>(null);
+  const textMaterialRef1 = useRef<THREE.MeshBasicMaterial>(null);
+  const textMaterialRef2 = useRef<THREE.MeshBasicMaterial>(null);
+  const emojiMaterialRef = useRef<THREE.MeshBasicMaterial>(null);
+  
   const hoverValue = useRef(0);
   const clickBoost = useRef(0);
 
-  const onBeforeCompile = (shader: any) => {
+  const onBeforeCompileLiquid = (shader: any) => {
     shader.uniforms.uTime = { value: 0 };
     shader.uniforms.uHover = { value: 0 };
 
@@ -106,17 +100,12 @@ const LiquidSphere = () => {
       '#include <begin_vertex>',
       `
         #include <begin_vertex>
-        
         float noise = snoise(vec3(position * 0.8 + uTime * 0.3));
         float noise2 = snoise(vec3(position * 2.0 - uTime * 0.2));
         float combined = noise * 0.6 + noise2 * 0.4;
-        
-        // Interaction: Hover increases turbulence and amplitude
         float hoverIntensity = 0.5 + uHover * 1.0;
-        
         float displacement = combined * (0.25 * hoverIntensity);
         vDisplacement = displacement;
-        
         transformed = position + normal * displacement;
       `
     );
@@ -130,68 +119,128 @@ const LiquidSphere = () => {
       '#include <color_fragment>',
       `
         #include <color_fragment>
-        // Subtle color shift on hover
         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.2, 0.8, 0.4), uHover * 0.1);
       `
     );
     
-    // Crucial: attach uniforms to the material's userData so useFrame can see them
     if (materialRef.current) {
       materialRef.current.userData.uniforms = shader.uniforms;
     }
   };
+
+  const onBeforeCompileText = (shader: any, targetRef: React.RefObject<THREE.MeshBasicMaterial | null>) => {
+    shader.uniforms.uTime = { value: 0 };
+    shader.uniforms.uHover = { value: 0 };
+
+    shader.vertexShader = `
+      uniform float uTime;
+      uniform float uHover;
+      ${noiseGLSL}
+      ${shader.vertexShader}
+    `;
+
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      `
+        #include <begin_vertex>
+        float noise = snoise(vec3(position.xy * 0.5, uTime * 0.2));
+        transformed.x += noise * (0.2 + uHover * 0.5);
+        transformed.y += snoise(vec3(position.yx * 0.5, uTime * 0.25)) * (0.2 + uHover * 0.5);
+        transformed.z += snoise(vec3(position.xy * 1.0, uTime * 0.1)) * (0.5 + uHover * 1.0);
+      `
+    );
+
+    if (targetRef.current) {
+      targetRef.current.userData.uniforms = shader.uniforms;
+    }
+  };
   
   useFrame(({ clock, mouse }) => {
-    // Access uniforms via the material's userData
-    const uniforms = materialRef.current?.userData?.uniforms;
-    if (uniforms) {
-      const dist = Math.sqrt(mouse.x * mouse.x + mouse.y * mouse.y);
-      const targetHover = Math.max(0, 1.0 - dist * 0.6);
-      
-      // Decay click boost
-      clickBoost.current = THREE.MathUtils.lerp(clickBoost.current, 0, 0.05);
-      
-      // Snappier reaction with 0.15 lerp
-      hoverValue.current = THREE.MathUtils.lerp(hoverValue.current, targetHover, 0.15);
-      
-      // Combine hover and click boost (clamped)
-      const totalInteraction = Math.min(2.0, hoverValue.current + clickBoost.current);
-      
-      uniforms.uHover.value = totalInteraction;
-      // Faster time scaling based on interaction
-      uniforms.uTime.value = clock.getElapsedTime() * (1.0 + totalInteraction * 1.0);
-    }
+    const time = clock.getElapsedTime();
+    const dist = Math.sqrt(mouse.x * mouse.x + mouse.y * mouse.y);
+    const targetHover = Math.max(0, 1.0 - dist * 0.6);
+    
+    clickBoost.current = THREE.MathUtils.lerp(clickBoost.current, 0, 0.05);
+    hoverValue.current = THREE.MathUtils.lerp(hoverValue.current, targetHover, 0.15);
+    const totalInteraction = Math.min(2.0, hoverValue.current + clickBoost.current);
+
+    const updateUniforms = (matRef: React.RefObject<THREE.Material | null>) => {
+      const uniforms = matRef.current?.userData?.uniforms;
+      if (uniforms) {
+        uniforms.uHover.value = totalInteraction;
+        uniforms.uTime.value = time * (1.0 + totalInteraction * 1.0);
+      }
+    };
+
+    updateUniforms(materialRef);
+    updateUniforms(textMaterialRef1);
+    updateUniforms(textMaterialRef2);
+    updateUniforms(emojiMaterialRef);
   });
 
   return (
-    <Float speed={1.5} rotationIntensity={0.5} floatIntensity={0.5}>
-      <Sphere 
-        args={[2, 128, 128]} 
-        onPointerOver={() => {
-          console.log('Sphere: Mouse Over');
-        }}
-        onPointerOut={() => {
-          console.log('Sphere: Mouse Out');
-        }}
-        onClick={(e) => {
-          e.stopPropagation();
-          console.log('Sphere: Clicked!');
-          clickBoost.current = 1.5; // Toned down from 4.0
-        }}
-      >
-        <meshPhysicalMaterial
-          ref={materialRef}
-          color="#42b883" // Vue/Green-ish
-          transmission={0.6}
-          opacity={1}
-          metalness={0.1}
-          roughness={0.1}
-          ior={1.4}
-          thickness={1.5}
-          onBeforeCompile={onBeforeCompile}
-        />
-      </Sphere>
-    </Float>
+    <group>
+      <Float speed={1.5} rotationIntensity={0.5} floatIntensity={0.5}>
+        <Sphere 
+          args={[2, 128, 128]} 
+          onClick={(e) => {
+            e.stopPropagation();
+            clickBoost.current = 1.5;
+          }}
+        >
+          <meshPhysicalMaterial
+            ref={materialRef}
+            color="#42b883"
+            transmission={0.6}
+            opacity={1}
+            metalness={0.1}
+            roughness={0.1}
+            ior={1.4}
+            thickness={1.5}
+            onBeforeCompile={onBeforeCompileLiquid}
+          />
+        </Sphere>
+      </Float>
+
+      <Float speed={2} rotationIntensity={0.5} floatIntensity={0.5}>
+        <group position={[0, 0, 2.5]}>
+          <Text
+            position={[0, 1, 0]}
+            fontSize={0.8}
+            color="#1f2328"
+            anchorX="center"
+            anchorY="middle"
+          >
+            🏌️‍♂️
+            <meshBasicMaterial ref={emojiMaterialRef} onBeforeCompile={(s) => onBeforeCompileText(s, emojiMaterialRef)} />
+          </Text>
+          <Text
+            position={[0, 0.2, 0]}
+            fontSize={0.4}
+            color="#1f2328"
+            anchorX="center"
+            anchorY="middle"
+            maxWidth={4}
+            textAlign="center"
+          >
+            Ready to tee off?
+            <meshBasicMaterial ref={textMaterialRef1} onBeforeCompile={(s) => onBeforeCompileText(s, textMaterialRef1)} />
+          </Text>
+          <Text
+            position={[0, -0.4, 0]}
+            fontSize={0.15}
+            color="#656d76"
+            anchorX="center"
+            anchorY="middle"
+            maxWidth={3}
+            textAlign="center"
+          >
+            Select a repository from the bag to start viewing diffs!
+            <meshBasicMaterial ref={textMaterialRef2} onBeforeCompile={(s) => onBeforeCompileText(s, textMaterialRef2)} />
+          </Text>
+        </group>
+      </Float>
+    </group>
   );
 };
 
@@ -199,15 +248,11 @@ export default function LiquidGreen() {
   return (
     <div style={{ width: '100%', height: '100%', pointerEvents: 'auto' }}>
       <Canvas camera={{ position: [0, 0, 6], fov: 45 }} dpr={[1, 2]}>
-        {/* White background matching the app theme */}
         <color attach="background" args={['#ffffff']} />
-        
         <ambientLight intensity={0.5} />
         <spotLight position={[10, 10, 10]} angle={0.15} penumbra={1} intensity={1} />
         <pointLight position={[-10, -10, -10]} intensity={0.5} />
-        
         <LiquidSphere />
-        
         <Environment preset="city" />
       </Canvas>
     </div>
