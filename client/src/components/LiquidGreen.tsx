@@ -129,7 +129,7 @@ const LiquidSphere = () => {
     // Access uniforms via userData which we set in onBeforeCompile
     const uniforms = materialRef.current?.userData?.uniforms;
     if (uniforms) {
-      uniforms.uTime.value = clock.getElapsedTime();
+      uniforms.uTime.value = clock.elapsedTime;
       
       const dist = Math.sqrt(mouse.x * mouse.x + mouse.y * mouse.y);
       const targetHover = Math.max(0, 1.0 - dist * 0.8);
