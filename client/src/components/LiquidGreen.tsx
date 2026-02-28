@@ -141,7 +141,7 @@ const LiquidSphere = () => {
 
   return (
     <Float speed={1.5} rotationIntensity={0.5} floatIntensity={0.5}>
-      <Sphere args={[2, 128, 128]}>
+      <Sphere args={[2, 128, 128]} pointerEvents="auto">
         <meshPhysicalMaterial
           ref={materialRef}
           color="#42b883" // Vue/Green-ish
