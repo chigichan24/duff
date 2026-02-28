@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Plus, Trash2, RefreshCw, GitBranch, Settings, X, GripVertical, Copy, Folder, FolderGit2, ChevronUp } from 'lucide-react';
+import { Search, Plus, Trash2, RefreshCw, GitBranch, Settings, X, GripVertical, Copy, Folder, FolderGit2, ChevronUp, File } from 'lucide-react';
 import * as Diff2Html from 'diff2html';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import type { DropResult, DroppableProps } from '@hello-pangea/dnd';
@@ -196,18 +196,30 @@ interface Repository {
 }
 
 const DiffView = ({ diff }: { diff: string }) => {
-  const diffHtml = Diff2Html.html(diff, {
-    drawFileList: false,
-    matching: 'lines',
-    outputFormat: 'side-by-side',
-    renderNothingWhenEmpty: true,
-  });
+  const files = Diff2Html.parse(diff);
+  
+  if (files.length === 0) return null;
 
   return (
-    <div 
-      className="diff-content"
-      dangerouslySetInnerHTML={{ __html: diffHtml }} 
-    />
+    <div className="diff-files-container">
+      {files.map((file, idx) => {
+        const fileDiffHtml = Diff2Html.html([file], {
+          drawFileList: false,
+          matching: 'lines',
+          outputFormat: 'side-by-side',
+          renderNothingWhenEmpty: true,
+        });
+
+        return (
+          <div key={idx} className="diff-file-section">
+            <div 
+              className="diff-content"
+              dangerouslySetInnerHTML={{ __html: fileDiffHtml }} 
+            />
+          </div>
+        );
+      })}
+    </div>
   );
 };
 
