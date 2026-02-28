@@ -203,31 +203,31 @@ const LiquidSphere = () => {
       <Float speed={2} rotationIntensity={0.2} floatIntensity={0.3}>
         <group position={[0, -0.3, 2.5]}>
           <Text
-            fontFamily="monospace"
+            fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
             position={[0, 0.2, 0]}
-            fontSize={0.12}
-            color="#2da44e"
+            fontSize={0.24}
+            color="#1f2328"
             anchorX="center"
             anchorY="middle"
             maxWidth={4}
             textAlign="center"
-            fillOpacity={0.8}
-            letterSpacing={0.2}
+            fillOpacity={0.9}
+            letterSpacing={0.02}
           >
             Ready to tee off?
             <meshBasicMaterial ref={textMaterialRef1} onBeforeCompile={(s) => onBeforeCompileText(s, textMaterialRef1)} />
           </Text>
           <Text
-            fontFamily="monospace"
-            position={[0, -0.05, 0]}
-            fontSize={0.04}
-            color="#42b883"
+            fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+            position={[0, -0.08, 0]}
+            fontSize={0.09}
+            color="#656d76"
             anchorX="center"
             anchorY="middle"
             maxWidth={3}
             textAlign="center"
-            fillOpacity={0.6}
-            letterSpacing={0.1}
+            fillOpacity={0.7}
+            letterSpacing={0.01}
           >
             Select a repository from the bag to start viewing diffs!
             <meshBasicMaterial ref={textMaterialRef2} onBeforeCompile={(s) => onBeforeCompileText(s, textMaterialRef2)} />
