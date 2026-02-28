@@ -411,7 +411,7 @@ describe('API Server', () => {
       
       const mockBuffer = Buffer.from('mock-head-data');
       const mockGit = {
-        binary: vi.fn().mockResolvedValue(mockBuffer),
+        binaryCatFile: vi.fn().mockResolvedValue(mockBuffer),
       };
       vi.mocked(simpleGit).mockReturnValue(mockGit as any);
 
@@ -419,7 +419,7 @@ describe('API Server', () => {
       expect(res.status).toBe(200);
       expect(res.header['content-type']).toBe('image/png');
       expect(res.body.toString()).toBe('mock-head-data');
-      expect(mockGit.binary).toHaveBeenCalledWith(['show', 'HEAD:test.png']);
+      expect(mockGit.binaryCatFile).toHaveBeenCalledWith(['-p', 'HEAD:test.png']);
     });
 
     it('should return working tree version successfully', async () => {
