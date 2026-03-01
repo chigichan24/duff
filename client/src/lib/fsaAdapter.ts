@@ -1,136 +1,100 @@
 import { Buffer } from 'buffer';
 
-export interface FSAdapter {
-  promises: {
-    readFile(path: string, options?: { encoding?: string }): Promise<Uint8Array | string>;
-    writeFile(path: string, data: Uint8Array | string, options?: { encoding?: string }): Promise<void>;
-    unlink(path: string): Promise<void>;
-    readdir(path: string): Promise<string[]>;
-    mkdir(path: string): Promise<void>;
-    rmdir(path: string): Promise<void>;
-    stat(path: string): Promise<any>;
-    lstat(path: string): Promise<any>;
-    readlink(path: string): Promise<string>;
-    symlink(target: string, path: string): Promise<void>;
-  };
-}
+const handleCache = new Map<string, FileSystemHandle>();
 
-export const createFsaAdapter = (rootHandle: FileSystemDirectoryHandle): FSAdapter => {
-  const resolvePath = async (pathStr: string, options: { create?: boolean; isDirectory?: boolean } = {}) => {
-    const parts = pathStr.split('/').filter(Boolean);
-    if (parts.length === 0) return { handle: rootHandle, name: '', parent: null };
-    
-    let current = rootHandle;
-    for (let i = 0; i < parts.length - 1; i++) {
-      current = await current.getDirectoryHandle(parts[i], { create: options.create });
-    }
-    
-    const name = parts[parts.length - 1];
-    return { parent: current, name };
-  };
+export const createFsaAdapter = (rootHandle: FileSystemDirectoryHandle): any => {
+  const getHandle = async (pathStr: string) => {
+    if (!pathStr || pathStr === '.' || pathStr === '/') return rootHandle;
+    if (handleCache.has(pathStr)) return handleCache.get(pathStr);
 
-  const getFileHandle = async (path: string, create = false) => {
-    const { parent, name } = await resolvePath(path, { create });
-    if (!parent) return rootHandle as unknown as FileSystemFileHandle; // Should not happen for files
-    return await parent.getFileHandle(name, { create });
-  };
+    const parts = pathStr.split('/').filter(p => p && p !== '.');
+    let current: any = rootHandle;
+    let currentPath = '';
 
-  const getDirHandle = async (path: string, create = false) => {
-    const { parent, name } = await resolvePath(path, { create });
-    if (!parent) return rootHandle;
-    return await parent.getDirectoryHandle(name, { create });
-  };
-
-  return {
-    promises: {
-      async readFile(path, options) {
-        const handle = await getFileHandle(path);
-        const file = await handle.getFile();
-        const buffer = await file.arrayBuffer();
-        const uint8Array = new Uint8Array(buffer);
-        if (options?.encoding === 'utf8') {
-          return new TextDecoder().decode(uint8Array);
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      currentPath += (currentPath ? '/' : '') + part;
+      if (handleCache.has(currentPath)) {
+          current = handleCache.get(currentPath);
+          continue;
+      }
+      try {
+        if (i === parts.length - 1) {
+          try { current = await current.getDirectoryHandle(part); }
+          catch { current = await current.getFileHandle(part); }
+        } else {
+          current = await current.getDirectoryHandle(part);
         }
-        return uint8Array;
-      },
-
-      async writeFile(path, data) {
-        const handle = await getFileHandle(path, true);
-        const writable = await handle.createWritable();
-        await writable.write(data);
-        await writable.close();
-      },
-
-      async unlink(path) {
-        const { parent, name } = await resolvePath(path);
-        if (parent) await parent.removeEntry(name);
-      },
-
-      async readdir(path) {
-        const handle = await getDirHandle(path);
-        const names: string[] = [];
-        for await (const name of (handle as any).keys()) {
-          names.push(name);
-        }
-        return names;
-      },
-
-      async mkdir(path) {
-        await getDirHandle(path, true);
-      },
-
-      async rmdir(path) {
-        const { parent, name } = await resolvePath(path);
-        if (parent) await parent.removeEntry(name, { recursive: true });
-      },
-
-      async stat(path) {
-        if (path === '/' || path === '' || path === '.') {
-          return {
-            isFile: () => false,
-            isDirectory: () => true,
-            isSymbolicLink: () => false,
-            size: 0,
-            mtimeMs: Date.now(),
-          };
-        }
-        try {
-          const { parent, name } = await resolvePath(path);
-          if (!parent) throw new Error('Not found');
-          const handle = await parent.getDirectoryHandle(name).catch(() => parent.getFileHandle(name));
-          const isFile = handle.kind === 'file';
-          let size = 0;
-          let mtimeMs = Date.now();
-          if (isFile) {
-            const file = await (handle as FileSystemFileHandle).getFile();
-            size = file.size;
-            mtimeMs = file.lastModified;
-          }
-          return {
-            isFile: () => isFile,
-            isDirectory: () => !isFile,
-            isSymbolicLink: () => false,
-            size,
-            mtimeMs,
-          };
-        } catch (e) {
-          const error: any = new Error(`ENOENT: no such file or directory, stat '${path}'`);
-          error.code = 'ENOENT';
-          throw error;
-        }
-      },
-
-      async lstat(path) {
-        return this.stat(path);
-      },
-
-      async readlink() {
-        throw new Error('Not implemented: readlink');
-      },
-
-      async symlink() {
-        throw new Error('Not implemented: symlink');
+        handleCache.set(currentPath, current);
+      } catch (e) {
+        throw Object.assign(new Error(`ENOENT: ${pathStr}`), { code: 'ENOENT' });
       }
     }
+    return current;
   };
+
+  const fs: any = {
+    async readFile(path: string, options: any) {
+      const handle = await getHandle(path);
+      if (!(handle instanceof FileSystemFileHandle)) throw new Error('EISDIR');
+      const file = await handle.getFile();
+      const buffer = await file.arrayBuffer();
+      const u8 = new Uint8Array(buffer);
+      const encoding = typeof options === 'string' ? options : options?.encoding;
+      if (encoding === 'utf8') return new TextDecoder().decode(u8);
+      return Buffer.from(u8);
+    },
+    async writeFile(path: string, data: any) {
+      const parts = path.split('/').filter(p => p && p !== '.');
+      const name = parts.pop()!;
+      let current: any = rootHandle;
+      for (const p of parts) current = await current.getDirectoryHandle(p, { create: true });
+      const handle = await current.getFileHandle(name, { create: true });
+      const writable = await handle.createWritable();
+      await writable.write(data);
+      await writable.close();
+    },
+    async readdir(path: string) {
+      const handle = await getHandle(path || '.');
+      if (!(handle instanceof FileSystemDirectoryHandle)) throw new Error('ENOTDIR');
+      const names = [];
+      for await (const name of (handle as any).keys()) names.push(name);
+      return names;
+    },
+    async stat(path: string) {
+      const handle = await getHandle(path || '.');
+      const isFile = handle instanceof FileSystemFileHandle;
+      const file = isFile ? await (handle as FileSystemFileHandle).getFile() : null;
+      const mtimeMs = file ? file.lastModified : Date.now();
+      const mtime = new Date(mtimeMs);
+      return {
+        isFile: () => isFile, isDirectory: () => !isFile, isSymbolicLink: () => false,
+        size: file ? file.size : 0, mtimeMs, mtime, ctimeMs: mtimeMs, ctime: mtime,
+        atimeMs: mtimeMs, atime: mtime, birthtimeMs: mtimeMs, birthtime: mtime,
+        mode: isFile ? 0o644 : 0o755, uid: 0, gid: 0, dev: 0, ino: 0
+      };
+    },
+    async lstat(path: string) { return this.stat(path); },
+    async unlink(path: string) {
+      const parts = path.split('/').filter(p => p && p !== '.');
+      const name = parts.pop()!;
+      const parent: any = await getHandle(parts.join('/'));
+      await parent.removeEntry(name);
+    },
+    async mkdir(path: string) {
+      const parts = path.split('/').filter(p => p && p !== '.');
+      let current: any = rootHandle;
+      for (const p of parts) current = await current.getDirectoryHandle(p, { create: true });
+    },
+    async rmdir(path: string) {
+      const parts = path.split('/').filter(p => p && p !== '.');
+      const name = parts.pop()!;
+      const parent: any = await getHandle(parts.join('/'));
+      await parent.removeEntry(name, { recursive: true });
+    },
+    async readlink() { return ''; },
+    async symlink() { }
+  };
+  fs.promises = fs;
+  return fs;
 };

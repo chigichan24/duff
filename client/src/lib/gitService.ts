@@ -9,31 +9,30 @@ export interface RepoStatus {
   lastUpdate: string;
 }
 
-export interface GitItem {
-  hash: string;
-  date: string;
-  message: string;
-  author_name: string;
-  author_email: string;
-  type: 'commit' | 'stash';
-  refs?: string;
-}
+const gitConfig = { dir: '.', gitdir: '.git' };
 
 export const gitService = {
   async getStatus(handle: FileSystemDirectoryHandle): Promise<RepoStatus> {
     const fs = createFsaAdapter(handle);
-    const branch = await git.currentBranch({ fs, dir: '/' }) || 'HEAD';
-    const matrix = await git.statusMatrix({ fs, dir: '/' });
-    
-    // row: [path, head, workdir, stage]
-    // head, workdir, stage: 0=deleted, 1=unmodified, 2=modified
-    // but matrix uses numbers representing state.
-    // isomorphic-git matrix state:
-    // [path, head, workdir, stage]
-    // 0: absent, 1: present, 2: modified
-    
+    let branch = 'unknown';
+    try {
+      branch = await git.currentBranch({ fs, ...gitConfig }) || 'HEAD';
+    } catch (e) {
+      try {
+        const ref = await git.resolveRef({ fs, ...gitConfig, ref: 'HEAD' });
+        branch = ref.substring(0, 7);
+      } catch(e2) {}
+    }
+
+    // フィルタリングを効かせて走査
+    const matrix = await git.statusMatrix({ 
+        fs, 
+        ...gitConfig,
+        filter: path => !path.startsWith('node_modules/') && !path.startsWith('.git/') && !path.startsWith('dist/')
+    });
+
     const modifiedFiles = matrix
-      .filter(row => row[1] !== row[2] || row[2] !== row[3]) // Modified or untracked
+      .filter(row => row[1] !== row[2] || row[2] !== row[3])
       .map(row => row[0]);
 
     return {
@@ -44,107 +43,69 @@ export const gitService = {
     };
   },
 
-  async getLog(handle: FileSystemDirectoryHandle): Promise<GitItem[]> {
+  async getLog(handle: FileSystemDirectoryHandle) {
     const fs = createFsaAdapter(handle);
-    const log = await git.log({ fs, dir: '/', depth: 50 });
-    
-    return log.map(c => ({
-      hash: c.oid,
-      date: new Date(c.commit.author.timestamp * 1000).toISOString(),
-      message: c.commit.message,
-      author_name: c.commit.author.name,
-      author_email: c.commit.author.email,
-      type: 'commit'
-    }));
+    try {
+      const log = await git.log({ fs, ...gitConfig, depth: 50 });
+      return log.map(c => ({
+        hash: c.oid,
+        date: new Date(c.commit.author.timestamp * 1000).toISOString(),
+        message: c.commit.message,
+        author_name: c.commit.author.name,
+        type: 'commit'
+      }));
+    } catch (e) { return []; }
   },
 
   async getFiles(handle: FileSystemDirectoryHandle, from?: string, to?: string): Promise<string[]> {
     const fs = createFsaAdapter(handle);
-    if (!from && !to) {
-      const status = await this.getStatus(handle);
-      return status.modifiedFiles;
-    }
-
-    // Comparing two commits or commit/working tree
-    if (from && to) {
-      // isomorphic-git Walk is needed here for proper diffing
-      // but a simpler way is git.statusMatrix if we compare HEAD and working tree.
-      // For general from/to, we use git.walk
-    }
-    
-    // Fallback or specific logic for statusMatrix if from is HEAD
-    if (from === 'HEAD' && !to) {
-      const matrix = await git.statusMatrix({ fs, dir: '/' });
-      return matrix.filter(row => row[1] !== row[2]).map(row => row[0]);
-    }
-
-    return [];
+    try {
+        if (!from && !to) {
+            const s = await this.getStatus(handle);
+            return s.modifiedFiles;
+        }
+        // シンプルな実装：matrixを使う（範囲指定は将来の課題だが、現状はこれで確実性を優先）
+        const matrix = await git.statusMatrix({ fs, ...gitConfig });
+        return matrix.filter(row => row[1] !== row[2]).map(row => row[0]);
+    } catch (e) { return []; }
   },
 
   async getDiff(handle: FileSystemDirectoryHandle, file?: string, from?: string, to?: string): Promise<string> {
     const fs = createFsaAdapter(handle);
     
-    const getBlob = async (oid: string, filePath: string): Promise<string> => {
+    const getBlob = async (ref: string, path: string): Promise<string> => {
       try {
-        const { blob } = await git.readBlob({ fs, dir: '/', oid, filepath: filePath });
+        const { blob } = await git.readBlob({ fs, ...gitConfig, oid: ref, filepath: path });
         return new TextDecoder().decode(blob);
-      } catch (e) {
-        return '';
-      }
+      } catch (e) { return ''; }
     };
 
-    const getWorkingFile = async (filePath: string): Promise<string> => {
+    const getWorking = async (path: string): Promise<string> => {
       try {
-        const content = await fs.promises.readFile(filePath, { encoding: 'utf8' });
-        return content as string;
-      } catch (e) {
-        return '';
-      }
+        return await fs.readFile(path, { encoding: 'utf8' });
+      } catch (e) { return ''; }
     };
 
-    const filesToDiff = file ? [file] : await this.getFiles(handle, from, to);
+    const files = file ? [file] : await this.getFiles(handle, from, to);
     let fullDiff = '';
 
-    for (const filePath of filesToDiff) {
-      let oldContent = '';
-      let newContent = '';
-
-      if (!from || from === 'HEAD') {
-        const headOid = await git.resolveRef({ fs, dir: '/', ref: 'HEAD' });
-        // Try to find the blob in HEAD
-        try {
-          const { blob } = await git.readObject({ fs, dir: '/', oid: headOid, filepath: filePath });
-          oldContent = new TextDecoder().decode(blob as Uint8Array);
-        } catch (e) {}
-      } else {
-        oldContent = await getBlob(from, filePath);
-      }
-
-      if (!to) {
-        newContent = await getWorkingFile(filePath);
-      } else {
-        newContent = await getBlob(to, filePath);
-      }
-
-      fullDiff += createPatch(filePath, oldContent, newContent, 'old', 'new');
+    for (const f of files) {
+      const oldC = await getBlob(from || 'HEAD', f);
+      const newC = to ? await getBlob(to, f) : await getWorking(f);
+      if (oldC === newC && !file) continue;
+      fullDiff += createPatch(f, oldC, newC, from || 'HEAD', to || 'Working Tree');
     }
-
     return fullDiff;
   },
 
   async getFileContent(handle: FileSystemDirectoryHandle, filePath: string, version?: string): Promise<Uint8Array | null> {
     const fs = createFsaAdapter(handle);
     try {
-      if (version === 'HEAD') {
-        const headOid = await git.resolveRef({ fs, dir: '/', ref: 'HEAD' });
-        const { blob } = await git.readObject({ fs, dir: '/', oid: headOid, filepath: filePath });
-        return blob as Uint8Array;
-      } else {
-        const data = await fs.promises.readFile(filePath);
-        return data as Uint8Array;
+      if (version) {
+        const { blob } = await git.readBlob({ fs, ...gitConfig, oid: version, filepath: filePath });
+        return blob;
       }
-    } catch (e) {
-      return null;
-    }
+      return await fs.readFile(filePath);
+    } catch (e) { return null; }
   }
 };
