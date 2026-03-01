@@ -45,7 +45,7 @@ const CONFIG = {
 const GitGraph: React.FC<GitGraphProps> = ({ repoId, isVisible, onSelectRange }) => {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selection, setSelection] = useState<{ from: string | null; to: string | null }>({ from: null, to: null });
+  const [selection, setSelection] = useState<{ from: string | null | 'UNSET'; to: string | null | 'UNSET' }>({ from: 'UNSET', to: 'UNSET' });
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
@@ -66,29 +66,54 @@ const GitGraph: React.FC<GitGraphProps> = ({ repoId, isVisible, onSelectRange })
   }, [repoId, isVisible]);
 
   const handleNodeClick = (hash: string | null, e: React.MouseEvent) => {
+    const clickedId = hash || 'WORKING_TREE';
+    const clickedIndex = graphData.findIndex(n => n.hash === clickedId);
+    
     let newSelection = { ...selection };
 
-    if (e.shiftKey) {
-      // Range selection (To)
-      if (newSelection.from === hash) {
-        // Deselect if clicking same
-        newSelection.from = null; 
-      } else {
-        newSelection.to = hash;
-      }
+    if (e.shiftKey && selection.from !== 'UNSET') {
+      // Range selection
+      newSelection.to = hash;
     } else {
-      // Base selection (From)
-      // If clicking same, clear selection (back to HEAD vs Working Tree)
-      if (newSelection.from === hash && newSelection.to === null) {
-        newSelection.from = null;
-      } else {
-        newSelection.from = hash;
-        newSelection.to = null; // Reset To when changing From without shift
-      }
+      // Single selection
+      newSelection.from = hash;
+      newSelection.to = 'UNSET'; // Use a special marker for 'not set' vs 'Working Tree (null)'
     }
 
     setSelection(newSelection);
-    onSelectRange(newSelection.from, newSelection.to);
+    
+    // Calculate the actual range for the API
+    const fromId = newSelection.from || 'WORKING_TREE';
+    const toId = newSelection.to === 'UNSET' ? fromId : (newSelection.to || 'WORKING_TREE');
+    
+    const idx1 = graphData.findIndex(n => n.hash === fromId);
+    const idx2 = graphData.findIndex(n => n.hash === toId);
+    
+    const olderIdx = Math.max(idx1, idx2);
+    const newerIdx = Math.min(idx1, idx2);
+    
+    const olderNode = graphData[olderIdx];
+    const newerNode = graphData[newerIdx];
+    
+    // To make it inclusive of the olderNode, we use its parent as the base.
+    // In our linear log, the parent of graphData[i] is graphData[i+1].
+    let baseHash: string | null = null;
+    if (olderIdx < graphData.length - 1) {
+      baseHash = graphData[olderIdx + 1].hash;
+    } else {
+      // Root commit case: can't easily get parent, so fallback to the commit itself (exclusive)
+      baseHash = olderNode.hash;
+    }
+    
+    // If newerNode is Working Tree, target is null
+    const targetHash = newerNode.hash === 'WORKING_TREE' ? null : newerNode.hash;
+    
+    // Special case: if only one node selected AND it's Working Tree
+    if (newSelection.to === 'UNSET' && fromId === 'WORKING_TREE') {
+      onSelectRange(null, null); // Default: HEAD vs Working Tree
+    } else {
+      onSelectRange(baseHash === 'WORKING_TREE' ? null : baseHash, targetHash);
+    }
   };
 
   const copyToClipboard = (text: string, e: React.MouseEvent) => {
@@ -225,13 +250,19 @@ const GitGraph: React.FC<GitGraphProps> = ({ repoId, isVisible, onSelectRange })
               {/* Nodes */}
               {graphData.map((node) => {
                 const isWorkingTree = node.hash === 'WORKING_TREE';
-                const isSelectedFrom = selection.from === node.hash || (isWorkingTree && selection.from === null && selection.to === null);
-                const isSelectedTo = selection.to === node.hash;
+                const nodeHash = isWorkingTree ? null : node.hash;
                 
+                const isSelectedFrom = selection.from === nodeHash && selection.from !== 'UNSET';
+                const isSelectedTo = selection.to === nodeHash && selection.to !== 'UNSET';
+                
+                // Special case: Default view (nothing selected or only Working Tree selected explicitly)
+                const isDefaultView = selection.from === 'UNSET' || (selection.from === null && selection.to === 'UNSET');
+                const isActuallySelectedFrom = isSelectedFrom || (isWorkingTree && isDefaultView);
+
                 let stroke = 'transparent';
                 let strokeWidth = 0;
                 
-                if (isSelectedFrom) {
+                if (isActuallySelectedFrom) {
                   stroke = CONFIG.colors.selectedFrom;
                   strokeWidth = 3;
                 } else if (isSelectedTo) {
@@ -259,7 +290,7 @@ const GitGraph: React.FC<GitGraphProps> = ({ repoId, isVisible, onSelectRange })
                         width="240" 
                         height="40"
                     >
-                        <div className={`graph-node-info ${isSelectedFrom || isSelectedTo ? 'selected' : ''}`}>
+                        <div className={`graph-node-info ${isActuallySelectedFrom || isSelectedTo ? 'selected' : ''}`}>
                             <div className="node-msg-row">
                                 <span className="node-message" title={node.message}>
                                     {node.message.split('\n')[0]}
