@@ -1,18 +1,15 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { Copy, Check } from 'lucide-react';
 import './GitGraph.css';
+import { gitService, type GitItem } from '../lib/gitService';
 
-export interface LogEntry {
-  hash: string;
-  date: string;
-  message: string;
-  author_name: string;
-  type: 'commit' | 'stash';
+export interface LogEntry extends GitItem {
   diff?: { insertions: number; deletions: number; files: number };
 }
 
 interface GitGraphProps {
   repoId: string;
+  handle: FileSystemDirectoryHandle | null;
   isVisible: boolean;
   onSelectRange: (from: string | null, to: string | null) => void;
 }
@@ -42,7 +39,7 @@ const CONFIG = {
   }
 };
 
-const GitGraph: React.FC<GitGraphProps> = ({ repoId, isVisible, onSelectRange }) => {
+const GitGraph: React.FC<GitGraphProps> = ({ repoId, handle, isVisible, onSelectRange }) => {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [selection, setSelection] = useState<{ from: string | null | 'UNSET'; to: string | null | 'UNSET' }>({ from: 'UNSET', to: 'UNSET' });
@@ -50,12 +47,11 @@ const GitGraph: React.FC<GitGraphProps> = ({ repoId, isVisible, onSelectRange })
   const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
-    if (isVisible && repoId) {
+    if (isVisible && handle) {
       setLoading(true);
-      fetch(`http://localhost:3001/api/repositories/${repoId}/log`)
-        .then(res => res.json())
-        .then(data => {
-          setEntries(data.items || []);
+      gitService.getLog(handle)
+        .then(items => {
+          setEntries(items as LogEntry[]);
           setLoading(false);
         })
         .catch(err => {
@@ -63,7 +59,7 @@ const GitGraph: React.FC<GitGraphProps> = ({ repoId, isVisible, onSelectRange })
           setLoading(false);
         });
     }
-  }, [repoId, isVisible]);
+  }, [handle, isVisible]);
 
   const handleNodeClick = (hash: string | null, e: React.MouseEvent) => {
     const clickedId = hash || 'WORKING_TREE';
@@ -132,6 +128,7 @@ const GitGraph: React.FC<GitGraphProps> = ({ repoId, isVisible, onSelectRange })
       date: new Date().toISOString(),
       message: 'Working Tree',
       author_name: 'You',
+      author_email: '',
       type: 'commit', // Treat as commit for rendering but color differently
       x: CONFIG.xMain,
       y: CONFIG.spacing,
