@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\""
+    "dev": "concurrently \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "test:e2e": "playwright test"
   },
   "repository": {
     "type": "git",
@@ -19,6 +20,7 @@
   },
   "homepage": "https://github.com/chigichan24/duff#readme",
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "concurrently": "^9.2.1"
   }
 }
