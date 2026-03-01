@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import crypto from 'crypto';
-import { simpleGit, SimpleGit } from 'simple-git';
+import { simpleGit, type SimpleGit } from 'simple-git';
 const app = express();
 const port = process.env.PORT || 3001;
 const REPO_FILE = path.join(__dirname, '../repositories.json');
@@ -162,20 +162,107 @@ app.get('/api/repositories/:id/status', async (req, res) => {
   }
 });
 
-app.get('/api/repositories/:id/diff', async (req, res) => {
+app.get('/api/repositories/:id/log', async (req, res) => {
   const { id } = req.params;
-  const { file } = req.query;
   const repo = getRepositories().find(r => r.id === id);
   
   if (!repo) return res.status(404).json({ error: 'Repository not found' });
 
   try {
     const git: SimpleGit = simpleGit(repo.path);
-    const args = ['--no-color', 'HEAD'];
+    
+    // Fetch log with stats
+    // We get 50 commits. 
+    // --stat gives us insertions/deletions/files changed
+    const log = await git.log(['--stat', '-n', '50']);
+    
+    // Fetch stash list
+    // simple-git stashList returns basic info.
+    const stashList = await git.stashList();
+    
+    // We want to merge them or return them structured.
+    // For the UI, we'll need to know which are stashes.
+    
+    const commits = log.all.map(c => ({
+      ...c,
+      type: 'commit',
+      // Ensure diff info is available if simple-git provides it in 'diff' property or we parse 'stat'
+      // simple-git's DefaultLogFields includes: hash, date, message, refs, author_name, author_email
+      // With --stat, it might add 'diff' property with stats.
+    }));
+
+    // Transform stash list to match log format roughly
+    const stashes = stashList.all.map((s: any) => ({
+      hash: s.hash, // stash@{n} usually, but simple-git might give the commit hash
+      date: s.date,
+      message: s.message,
+      author_name: s.author_name,
+      author_email: s.author_email,
+      type: 'stash',
+      refs: 'stash',
+      diff: null // Stash diffs might need separate fetching if not provided
+    }));
+
+    res.json({
+      items: [...commits, ...stashes].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/repositories/:id/diff', async (req, res) => {
+  const { id } = req.params;
+  const { file, from, to } = req.query;
+  const repo = getRepositories().find(r => r.id === id);
+  
+  if (!repo) return res.status(404).json({ error: 'Repository not found' });
+
+  try {
+    const git: SimpleGit = simpleGit(repo.path);
+    const args = ['--no-color'];
+    
+    if (from && to) {
+      args.push(`${from}..${to}`);
+    } else if (from) {
+      args.push(from as string);
+    } else {
+      args.push('HEAD');
+    }
+
     if (file) args.push('--', file as string);
     
     const diff = await git.diff(args);
     res.json({ diff });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/repositories/:id/files', async (req, res) => {
+  const { id } = req.params;
+  const { from, to } = req.query;
+  const repo = getRepositories().find(r => r.id === id);
+  
+  if (!repo) return res.status(404).json({ error: 'Repository not found' });
+
+  try {
+    const git: SimpleGit = simpleGit(repo.path);
+    const args = ['--name-only'];
+    
+    if (from && to) {
+      args.push(`${from}..${to}`);
+    } else if (from) {
+      args.push(from as string);
+    } else {
+      // Default: show working tree changes (status)
+      const status = await git.status();
+      return res.json({ files: status.files.map(f => f.path) });
+    }
+
+    const filesString = await git.diff(args);
+    const files = filesString.split('\n').filter(f => f.trim() !== '');
+    res.json({ files });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

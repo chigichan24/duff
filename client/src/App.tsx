@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Plus, Trash2, RefreshCw, GitBranch, Settings, X, GripVertical, Copy, Folder, FolderGit2, ChevronUp, File } from 'lucide-react';
+import { Search, Plus, Trash2, RefreshCw, GitBranch, Settings, X, GripVertical, Copy, Folder, FolderGit2, ChevronUp, File, History } from 'lucide-react';
 import * as Diff2Html from 'diff2html';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import type { DropResult, DroppableProps } from '@hello-pangea/dnd';
@@ -7,6 +7,7 @@ import pixelmatch from 'pixelmatch';
 import 'diff2html/bundles/css/diff2html.min.css';
 import './App.css';
 import LiquidGreen from './components/LiquidGreen';
+import GitGraph from './components/GitGraph';
 
 // Custom Droppable to handle React mounting
 export const StrictModeDroppable = ({ children, ...props }: DroppableProps) => {
@@ -261,6 +262,9 @@ function App() {
   const [activeDiff, setActiveDiff] = useState<string>('');
   const [globalInterval, setGlobalInterval] = useState(30);
   const [sidebarWidth, setSidebarWidth] = useState(300);
+  const [showHistory, setShowHistory] = useState(false);
+  const [diffRange, setDiffRange] = useState<{ from: string | null; to: string | null }>({ from: null, to: null });
+  const [rangeModifiedFiles, setRangeModifiedFiles] = useState<string[]>([]);
   const isResizing = useRef(false);
 
   const activeRepo = repositories.find(r => r.id === activeRepoId);
@@ -281,9 +285,15 @@ function App() {
 
   useEffect(() => {
     if (activeRepoId) {
-      fetchDiff(activeRepoId, selectedFile);
+      fetchDiff(activeRepoId, selectedFile, diffRange);
     }
-  }, [activeRepoId, selectedFile]);
+  }, [activeRepoId, selectedFile, diffRange]);
+
+  useEffect(() => {
+    if (activeRepoId) {
+      fetchRangeFiles(activeRepoId, diffRange);
+    }
+  }, [activeRepoId, diffRange]);
 
   const startResizing = () => {
     isResizing.current = true;
@@ -348,9 +358,28 @@ function App() {
     if (activeRepoId) updateStatus(activeRepoId);
   };
 
-  const fetchDiff = async (id: string, file: string | null) => {
+  const fetchRangeFiles = async (id: string, range = diffRange) => {
     try {
-      const url = `http://localhost:3001/api/repositories/${id}/diff${file ? `?file=${encodeURIComponent(file)}` : ''}`;
+      const params = new URLSearchParams();
+      if (range.from) params.append('from', range.from);
+      if (range.to) params.append('to', range.to);
+      
+      const res = await fetch(`http://localhost:3001/api/repositories/${id}/files?${params.toString()}`);
+      const data = await res.json();
+      setRangeModifiedFiles(data.files || []);
+    } catch (err) {
+      console.error('Failed to fetch range files', err);
+    }
+  };
+
+  const fetchDiff = async (id: string, file: string | null, range = diffRange) => {
+    try {
+      const params = new URLSearchParams();
+      if (file) params.append('file', file);
+      if (range.from) params.append('from', range.from);
+      if (range.to) params.append('to', range.to);
+      
+      const url = `http://localhost:3001/api/repositories/${id}/diff?${params.toString()}`;
       const res = await fetch(url);
       const data = await res.json();
       setActiveDiff(data.diff);
@@ -429,9 +458,9 @@ function App() {
     }
   };
 
-  const filteredFiles = activeRepo?.status?.modifiedFiles.filter(f => 
+  const filteredFiles = (diffRange.from ? rangeModifiedFiles : activeRepo?.status?.modifiedFiles || []).filter(f => 
     f.toLowerCase().includes(searchTerm.toLowerCase())
-  ) || [];
+  );
 
   return (
     <div className="app-container">
@@ -511,12 +540,29 @@ function App() {
 
       <div className="resizer" onMouseDown={startResizing} />
 
+      {activeRepoId && (
+        <GitGraph 
+          repoId={activeRepoId} 
+          isVisible={showHistory} 
+          onSelectRange={(from, to) => setDiffRange({ from, to })} 
+        />
+      )}
+
       <main className="main-content">
         {activeRepo ? (
           <>
             <header className="main-header">
               <div className="header-top">
-                <h3>{activeRepo.name} <span className="branch-label">({activeRepo.status?.branch})</span></h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <button 
+                    className={`icon-btn ${showHistory ? 'active' : ''}`} 
+                    onClick={() => setShowHistory(!showHistory)}
+                    title="Toggle History"
+                  >
+                    <History size={18} />
+                  </button>
+                  <h3>{activeRepo.name} <span className="branch-label">({activeRepo.status?.branch})</span></h3>
+                </div>
                 <div className="header-meta">
                   <span>Last updated: {activeRepo.status?.lastUpdate ? new Date(activeRepo.status.lastUpdate).toLocaleTimeString() : '...'}</span>
                   <button onClick={updateActiveRepoStatus} className="icon-btn"><RefreshCw size={16} /></button>

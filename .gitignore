@@ -29,5 +29,16 @@ Thumbs.db
 client/dev-dist
 client/stats.html
 
+# Serverspecific
+server/src/**/*.js
+server/src/**/*.js.map
+server/src/**/*.d.ts
+server/src/**/*.d.ts.map
+
+server/*.config.js
+server/*.config.js.map
+server/*.config.d.ts
+server/*.config.d.ts.map
+
 # Work Logging
 history.log
