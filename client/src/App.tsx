@@ -264,6 +264,7 @@ function App() {
   const [sidebarWidth, setSidebarWidth] = useState(300);
   const [showHistory, setShowHistory] = useState(false);
   const [diffRange, setDiffRange] = useState<{ from: string | null; to: string | null }>({ from: null, to: null });
+  const [rangeModifiedFiles, setRangeModifiedFiles] = useState<string[]>([]);
   const isResizing = useRef(false);
 
   const activeRepo = repositories.find(r => r.id === activeRepoId);
@@ -287,6 +288,12 @@ function App() {
       fetchDiff(activeRepoId, selectedFile, diffRange);
     }
   }, [activeRepoId, selectedFile, diffRange]);
+
+  useEffect(() => {
+    if (activeRepoId) {
+      fetchRangeFiles(activeRepoId, diffRange);
+    }
+  }, [activeRepoId, diffRange]);
 
   const startResizing = () => {
     isResizing.current = true;
@@ -349,6 +356,20 @@ function App() {
 
   const updateActiveRepoStatus = () => {
     if (activeRepoId) updateStatus(activeRepoId);
+  };
+
+  const fetchRangeFiles = async (id: string, range = diffRange) => {
+    try {
+      const params = new URLSearchParams();
+      if (range.from) params.append('from', range.from);
+      if (range.to) params.append('to', range.to);
+      
+      const res = await fetch(`http://localhost:3001/api/repositories/${id}/files?${params.toString()}`);
+      const data = await res.json();
+      setRangeModifiedFiles(data.files || []);
+    } catch (err) {
+      console.error('Failed to fetch range files', err);
+    }
   };
 
   const fetchDiff = async (id: string, file: string | null, range = diffRange) => {
@@ -437,9 +458,9 @@ function App() {
     }
   };
 
-  const filteredFiles = activeRepo?.status?.modifiedFiles.filter(f => 
+  const filteredFiles = (diffRange.from ? rangeModifiedFiles : activeRepo?.status?.modifiedFiles || []).filter(f => 
     f.toLowerCase().includes(searchTerm.toLowerCase())
-  ) || [];
+  );
 
   return (
     <div className="app-container">
