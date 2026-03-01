@@ -40,5 +40,10 @@ server/*.config.js.map
 server/*.config.d.ts
 server/*.config.d.ts.map
 
+# Playwright
+playwright-report/
+test-results/
+e2e/temp-repositories.json
+
 # Work Logging
 history.log

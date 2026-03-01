@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Search, Plus, Trash2, RefreshCw, GitBranch, Settings, X, GripVertical, Copy, Folder, FolderGit2, ChevronUp, File, History } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Search, Plus, Trash2, RefreshCw, GitBranch, Settings, X, GripVertical, Copy, File, History, ShieldAlert, Key, Loader2 } from 'lucide-react';
 import * as Diff2Html from 'diff2html';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import type { DropResult, DroppableProps } from '@hello-pangea/dnd';
@@ -8,32 +8,24 @@ import 'diff2html/bundles/css/diff2html.min.css';
 import './App.css';
 import LiquidGreen from './components/LiquidGreen';
 import GitGraph from './components/GitGraph';
+import { gitService, type RepoStatus } from './lib/gitService';
+import { repoStore, type RepositoryMetadata } from './lib/repoStore';
 
-// Custom Droppable to handle React mounting
+// Custom Droppable
 export const StrictModeDroppable = ({ children, ...props }: DroppableProps) => {
   const [enabled, setEnabled] = useState(false);
   useEffect(() => {
     const animation = requestAnimationFrame(() => setEnabled(true));
-    return () => {
-      cancelAnimationFrame(animation);
-      setEnabled(false);
-    };
+    return () => { cancelAnimationFrame(animation); setEnabled(false); };
   }, []);
-  if (!enabled) {
-    return null;
-  }
+  if (!enabled) return null;
   return <Droppable {...props}>{children}</Droppable>;
 };
 
 function splitFilePath(filePath: string): { dir: string; name: string } {
   const lastSlash = filePath.lastIndexOf('/');
-  if (lastSlash === -1) {
-    return { dir: '', name: filePath };
-  }
-  return {
-    dir: filePath.substring(0, lastSlash + 1),
-    name: filePath.substring(lastSlash + 1),
-  };
+  if (lastSlash === -1) return { dir: '', name: filePath };
+  return { dir: filePath.substring(0, lastSlash + 1), name: filePath.substring(lastSlash + 1) };
 }
 
 const isImageFile = (filename: string | null) => {
@@ -42,199 +34,84 @@ const isImageFile = (filename: string | null) => {
   return ext && ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext);
 };
 
-const ImageDiffView = ({ repoId, file, lastUpdate }: { repoId: string; file: string; lastUpdate?: string }) => {
-  const timestamp = lastUpdate ? new Date(lastUpdate).getTime() : Date.now();
-  const beforeUrl = `http://localhost:3001/api/repositories/${repoId}/content?file=${encodeURIComponent(file)}&version=HEAD&t=${timestamp}`;
-  const afterUrl = `http://localhost:3001/api/repositories/${repoId}/content?file=${encodeURIComponent(file)}&version=working&t=${timestamp}`;
+const ImageDiffView = ({ handle, file, lastUpdate, range }: { handle: FileSystemDirectoryHandle | null; file: string; lastUpdate?: string; range: { from: string | null; to: string | null } }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState<string | null>(null);
-  const [beforeExists, setBeforeExists] = useState(true);
-  const [afterExists, setAfterExists] = useState(true);
+  const [beforeUrl, setBeforeUrl] = useState<string | null>(null);
+  const [afterUrl, setAfterUrl] = useState<string | null>(null);
   const [modalImage, setModalImage] = useState<{ url?: string; canvas?: HTMLCanvasElement; title: string } | null>(null);
 
   useEffect(() => {
-    const loadImage = (url: string): Promise<HTMLImageElement | null> => {
-      return new Promise((resolve) => {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => resolve(img);
-        img.onerror = () => resolve(null); // Return null on error (404, etc)
-        img.src = url;
-      });
+    if (!handle) return;
+    let bUrl: string | null = null, aUrl: string | null = null;
+    const loadImages = async () => {
+      const bData = await gitService.getFileContent(handle, file, range.from || 'HEAD');
+      const aData = await gitService.getFileContent(handle, file, range.to || undefined);
+      if (bData) { bUrl = URL.createObjectURL(new Blob([bData])); setBeforeUrl(bUrl); } else setBeforeUrl(null);
+      if (aData) { aUrl = URL.createObjectURL(new Blob([aData])); setAfterUrl(aUrl); } else setAfterUrl(null);
     };
+    loadImages();
+    return () => { if (bUrl) URL.revokeObjectURL(bUrl); if (aUrl) URL.revokeObjectURL(aUrl); };
+  }, [handle, file, lastUpdate, range]);
 
+  useEffect(() => {
+    const loadImage = (url: string): Promise<HTMLImageElement | null> => new Promise((resolve) => {
+        const img = new Image(); img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img); img.onerror = () => resolve(null);
+        img.src = url;
+    });
     const runDiff = async () => {
+      if (!beforeUrl || !afterUrl || !canvasRef.current) return;
       try {
         const [img1, img2] = await Promise.all([loadImage(beforeUrl), loadImage(afterUrl)]);
-        
-        setBeforeExists(!!img1);
-        setAfterExists(!!img2);
-
-        if (!img1 || !img2) {
-          setError(null); 
-          return;
-        }
-
-        if (img1.width !== img2.width || img1.height !== img2.height) {
-          setError(`Dimensions mismatch: ${img1.width}x${img1.height} vs ${img2.width}x${img2.height}. Visual diff disabled.`);
-          return;
-        }
-
+        if (!img1 || !img2 || img1.width !== img2.width || img1.height !== img2.height) { setError('Mismatch'); return; }
         const canvas = canvasRef.current;
-        if (!canvas) return;
-
-        const { width, height } = img1;
-        canvas.width = width;
-        canvas.height = height;
-
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        const c1 = document.createElement('canvas');
-        const c2 = document.createElement('canvas');
-        c1.width = c2.width = width;
-        c1.height = c2.height = height;
-        const ctx1 = c1.getContext('2d')!;
-        const ctx2 = c2.getContext('2d')!;
-        
-        ctx1.drawImage(img1, 0, 0);
-        ctx2.drawImage(img2, 0, 0);
-
-        const imgData1 = ctx1.getImageData(0, 0, width, height);
-        const imgData2 = ctx2.getImageData(0, 0, width, height);
-        const diffData = ctx.createImageData(width, height);
-
-        pixelmatch(imgData1.data, imgData2.data, diffData.data, width, height, { threshold: 0.1 });
-        ctx.putImageData(diffData, 0, 0);
-        setError(null);
-      } catch (err: any) {
-        console.error('Image diff error:', err);
-        setError(err.message || 'Failed to generate visual diff.');
-      }
+        canvas.width = img1.width; canvas.height = img1.height;
+        const ctx = canvas.getContext('2d')!;
+        const c1 = document.createElement('canvas'), c2 = document.createElement('canvas');
+        c1.width = c2.width = img1.width; c1.height = c2.height = img1.height;
+        const ctx1 = c1.getContext('2d')!, ctx2 = c2.getContext('2d')!;
+        ctx1.drawImage(img1, 0, 0); ctx2.drawImage(img2, 0, 0);
+        const diffData = ctx.createImageData(img1.width, img1.height);
+        pixelmatch(ctx1.getImageData(0, 0, img1.width, img1.height).data, ctx2.getImageData(0, 0, img1.width, img1.height).data, diffData.data, img1.width, img1.height, { threshold: 0.1 });
+        ctx.putImageData(diffData, 0, 0); setError(null);
+      } catch (err: any) { setError('Visual diff failed'); }
     };
-
     runDiff();
   }, [beforeUrl, afterUrl]);
 
   return (
     <div className="image-diff-container">
       <div className="image-diff-grid">
-        <div className="image-diff-item">
-          <h5>Before (HEAD)</h5>
-          <div className="image-wrapper">
-            {beforeExists ? (
-              <img src={beforeUrl} alt="Before" onClick={() => setModalImage({ url: beforeUrl, title: 'Before (HEAD)' })} />
-            ) : (
-              <div className="no-image-placeholder">New File</div>
-            )}
-          </div>
-        </div>
-        <div className="image-diff-item">
-          <h5>After (Working Tree)</h5>
-          <div className="image-wrapper">
-            {afterExists ? (
-              <img src={afterUrl} alt="After" onClick={() => setModalImage({ url: afterUrl, title: 'After (Working Tree)' })} />
-            ) : (
-              <div className="no-image-placeholder">Deleted File</div>
-            )}
-          </div>
-        </div>
-        <div className="image-diff-item">
-          <h5>Visual Diff</h5>
-          <div className="image-wrapper">
-            {beforeExists && afterExists ? (
-              <canvas 
-                ref={canvasRef} 
-                onClick={() => {
-                  const newCanvas = document.createElement('canvas');
-                  newCanvas.width = canvasRef.current!.width;
-                  newCanvas.height = canvasRef.current!.height;
-                  newCanvas.getContext('2d')!.drawImage(canvasRef.current!, 0, 0);
-                  setModalImage({ canvas: newCanvas, title: 'Visual Diff' });
-                }} 
-              />
-            ) : (
-              <div className="no-image-placeholder">N/A</div>
-            )}
-          </div>
-        </div>
+        <div className="image-diff-item"><h5>Before ({range.from || 'HEAD'})</h5><div className="image-wrapper">{beforeUrl ? <img src={beforeUrl} alt="Before" onClick={() => setModalImage({ url: beforeUrl, title: 'Before' })} /> : <div className="no-image-placeholder">N/A</div>}</div></div>
+        <div className="image-diff-item"><h5>After ({range.to || 'Working'})</h5><div className="image-wrapper">{afterUrl ? <img src={afterUrl} alt="After" onClick={() => setModalImage({ url: afterUrl, title: 'After' })} /> : <div className="no-image-placeholder">N/A</div>}</div></div>
+        <div className="image-diff-item"><h5>Visual Diff</h5><div className="image-wrapper">{beforeUrl && afterUrl ? <canvas ref={canvasRef} onClick={() => { const newCanvas = document.createElement('canvas'); newCanvas.width = canvasRef.current!.width; newCanvas.height = canvasRef.current!.height; newCanvas.getContext('2d')!.drawImage(canvasRef.current!, 0, 0); setModalImage({ canvas: newCanvas, title: 'Visual Diff' }); }} /> : <div className="no-image-placeholder">N/A</div>}</div></div>
       </div>
       {error && <div className="diff-error">{error}</div>}
-
-      {modalImage && (
-        <div className="image-modal-overlay" onClick={() => setModalImage(null)}>
-          <div className="image-modal-content" onClick={e => e.stopPropagation()}>
-            <span className="image-modal-title">{modalImage.title}</span>
-            {modalImage.url ? (
-              <img src={modalImage.url} alt={modalImage.title} />
-            ) : modalImage.canvas ? (
-              <div ref={el => {
-                if (el && modalImage.canvas && !el.hasChildNodes()) {
-                  el.appendChild(modalImage.canvas);
-                }
-              }} />
-            ) : null}
-            <button className="close-modal" onClick={() => setModalImage(null)}>
-              <X size={32} />
-            </button>
-          </div>
-        </div>
-      )}
+      {modalImage && <div className="image-modal-overlay" onClick={() => setModalImage(null)}><div className="image-modal-content" onClick={e => e.stopPropagation()}><span className="image-modal-title">{modalImage.title}</span>{modalImage.url ? <img src={modalImage.url} alt={modalImage.title} /> : modalImage.canvas ? <div ref={el => { if (el && modalImage.canvas && !el.hasChildNodes()) el.appendChild(modalImage.canvas); }} /> : null}<button className="close-modal" onClick={() => setModalImage(null)}><X size={32} /></button></div></div>}
     </div>
   );
 };
 
-interface Repository {
-  id: string;
-  name: string;
-  path: string;
-  pollInterval: number;
-  status?: {
-    branch: string;
-    modifiedFiles: string[];
-    hasChanges: boolean;
-    lastUpdate: string;
-  };
-}
-
 const DiffView = ({ diff }: { diff: string }) => {
-  const files = Diff2Html.parse(diff);
-  
-  if (files.length === 0) return null;
-
+  const files = useMemo(() => Diff2Html.parse(diff), [diff]);
+  if (files.length === 0) return <div className="no-diff"><div className="humor-message"><span className="emoji">⛳️</span><p>No changes detected.</p></div></div>;
   return (
     <div className="diff-files-container">
       {files.map((file, idx) => {
-        const fileDiffHtml = Diff2Html.html([file], {
-          drawFileList: false,
-          matching: 'lines',
-          outputFormat: 'side-by-side',
-          renderNothingWhenEmpty: true,
-        });
-
+        const html = Diff2Html.html([file], { drawFileList: false, matching: 'lines', outputFormat: 'side-by-side', renderNothingWhenEmpty: true });
+        const fileName = file.newName === '/dev/null' ? file.oldName : file.newName;
         return (
           <div key={idx} className="diff-file-section">
             <header className="liquid-glass-header">
               <div className="liquid-glass-bg"></div>
               <div className="header-content">
                 <File size={16} className="file-icon" />
-                <span className="file-name">{file.newName === '/dev/null' ? file.oldName : file.newName}</span>
-                <button
-                  className="copy-filename-btn"
-                  title="Copy path"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigator.clipboard.writeText(file.newName === '/dev/null' ? file.oldName : file.newName);
-                  }}
-                >
-                  <Copy size={12} />
-                </button>
+                <span className="file-name">{fileName}</span>
+                <button className="copy-filename-btn" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(fileName); }}><Copy size={12} /></button>
               </div>
             </header>
-            <div 
-              className="diff-content"
-              dangerouslySetInnerHTML={{ __html: fileDiffHtml }} 
-            />
+            <div className="diff-content" dangerouslySetInnerHTML={{ __html: html }} />
           </div>
         );
       })}
@@ -242,284 +119,102 @@ const DiffView = ({ diff }: { diff: string }) => {
   );
 };
 
+interface Repository extends RepositoryMetadata {
+  handle?: FileSystemDirectoryHandle;
+  hasPermission?: boolean;
+  status?: RepoStatus;
+}
+
 function App() {
-  const [repositories, setRepositories] = useState<Repository[]>([]);
-  const [activeRepoId, setActiveRepoId] = useState<string | null>(null);
+  const [repos, setRepos] = useState<Repository[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [activeDiff, setActiveDiff] = useState('');
+  const [modifiedFiles, setModifiedFiles] = useState<Record<string, string[]>>({});
   const [searchTerm, setSearchTerm] = useState('');
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [newRepoPath, setNewRepoPath] = useState('');
-  const [browseMode, setBrowseMode] = useState(true);
-  const [browsePath, setBrowsePath] = useState('');
-  const [browseEntries, setBrowseEntries] = useState<Array<{
-    name: string; path: string; isGitRepo: boolean;
-  }>>([]);
-  const [browseParentPath, setBrowseParentPath] = useState<string | null>(null);
-  const [showHidden, setShowHidden] = useState(false);
-  const [browseLoading, setBrowseLoading] = useState(false);
-  const [browseError, setBrowseError] = useState('');
-  const [activeDiff, setActiveDiff] = useState<string>('');
-  const [globalInterval, setGlobalInterval] = useState(30);
-  const [sidebarWidth, setSidebarWidth] = useState(300);
   const [showHistory, setShowHistory] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isUpdating, setIsUpdating] = useState(false);
   const [diffRange, setDiffRange] = useState<{ from: string | null; to: string | null }>({ from: null, to: null });
-  const [rangeModifiedFiles, setRangeModifiedFiles] = useState<string[]>([]);
+  const [sidebarWidth, setSidebarWidth] = useState(300);
   const isResizing = useRef(false);
 
-  const activeRepo = repositories.find(r => r.id === activeRepoId);
+  const activeRepo = useMemo(() => repos.find(r => r.id === activeId), [repos, activeId]);
+  const activeHandle = useMemo(() => activeRepo?.handle, [activeRepo]);
+  const activeStatus = useMemo(() => activeRepo?.status, [activeRepo]);
+  const activeFiles = useMemo(() => (activeId ? modifiedFiles[activeId] || [] : []).filter(f => f.toLowerCase().includes(searchTerm.toLowerCase())), [activeId, modifiedFiles, searchTerm]);
 
-  useEffect(() => {
-    fetchRepos();
-    const interval = setInterval(fetchRepos, 60000); // 1 min background check
-    return () => clearInterval(interval);
+  const updateStatus = useCallback(async (id: string, handle: FileSystemDirectoryHandle) => {
+    setIsUpdating(true);
+    try {
+      const status = await gitService.getStatus(handle);
+      setRepos(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+      setModifiedFiles(prev => ({ ...prev, [id]: status.modifiedFiles }));
+    } catch (err) { console.error(err); } finally { setIsUpdating(false); }
   }, []);
 
   useEffect(() => {
-    if (activeRepoId) {
-      updateActiveRepoStatus();
-      const interval = setInterval(updateActiveRepoStatus, globalInterval * 1000); 
-      return () => clearInterval(interval);
-    }
-  }, [activeRepoId, globalInterval]);
+    (async () => {
+      const metas = await repoStore.getRepositories();
+      const list: Repository[] = [];
+      for (const m of metas) {
+        const h = await repoStore.getHandle(m.id);
+        const r: Repository = { ...m, handle: h, hasPermission: false };
+        if (h && (await (h as any).queryPermission({ mode: 'readwrite' })) === 'granted') r.hasPermission = true;
+        list.push(r);
+      }
+      setRepos(list); setIsLoading(false);
+      if (list[0]?.hasPermission && list[0].handle) updateStatus(list[0].id, list[0].handle);
+    })();
+  }, [updateStatus]);
 
   useEffect(() => {
-    if (activeRepoId) {
-      fetchDiff(activeRepoId, selectedFile, diffRange);
+    if (activeHandle && activeRepo?.hasPermission) {
+        gitService.getDiff(activeHandle, selectedFile || undefined, diffRange.from || undefined, diffRange.to || undefined)
+            .then(setActiveDiff).catch(() => setActiveDiff(''));
+    } else setActiveDiff('');
+  }, [activeHandle, selectedFile, activeRepo?.hasPermission, activeStatus?.lastUpdate, diffRange]);
+
+  const handleGrant = async (repo: Repository) => {
+    if (!repo.handle) return;
+    const ok = await repoStore.verifyPermission(repo.handle);
+    if (ok) {
+      setRepos(prev => prev.map(r => r.id === repo.id ? { ...r, hasPermission: true } : r));
+      updateStatus(repo.id, repo.handle);
     }
-  }, [activeRepoId, selectedFile, diffRange]);
-
-  useEffect(() => {
-    if (activeRepoId) {
-      fetchRangeFiles(activeRepoId, diffRange);
-    }
-  }, [activeRepoId, diffRange]);
-
-  const startResizing = () => {
-    isResizing.current = true;
-    document.addEventListener('mousemove', handleMouseMove);
-    document.addEventListener('mouseup', stopResizing);
-  };
-
-  const handleMouseMove = (e: MouseEvent) => {
-    if (!isResizing.current) return;
-    const newWidth = Math.max(200, Math.min(600, e.clientX));
-    setSidebarWidth(newWidth);
-  };
-
-  const stopResizing = () => {
-    isResizing.current = false;
-    document.removeEventListener('mousemove', handleMouseMove);
-    document.removeEventListener('mouseup', stopResizing);
   };
 
   const onDragEnd = async (result: DropResult) => {
     if (!result.destination) return;
-
-    const items = Array.from(repositories);
-    const [reorderedItem] = items.splice(result.source.index, 1);
-    items.splice(result.destination.index, 0, reorderedItem);
-
-    setRepositories(items);
-
-    try {
-      await fetch('http://localhost:3001/api/repositories/reorder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repositoryIds: items.map(r => r.id) })
-      });
-    } catch (err) {
-      console.error('Failed to save reordered repos', err);
-    }
+    const items = Array.from(repos);
+    const [moved] = items.splice(result.source.index, 1);
+    items.splice(result.destination.index, 0, moved);
+    setRepos(items);
+    await repoStore.saveRepositories(items.map(({id, name, addedAt}) => ({id, name, addedAt})));
   };
-
-  const fetchRepos = async () => {
-    try {
-      const res = await fetch('http://localhost:3001/api/repositories');
-      const data = await res.json();
-      setRepositories(data);
-      data.forEach((repo: Repository) => updateStatus(repo.id));
-    } catch (err) {
-      console.error('Failed to fetch repos', err);
-    }
-  };
-
-  const updateStatus = async (id: string) => {
-    try {
-      const res = await fetch(`http://localhost:3001/api/repositories/${id}/status`);
-      const status = await res.json();
-      setRepositories(prev => prev.map(r => r.id === id ? { ...r, status } : r));
-    } catch (err) {
-      console.error('Failed to update status', err);
-    }
-  };
-
-  const updateActiveRepoStatus = () => {
-    if (activeRepoId) updateStatus(activeRepoId);
-  };
-
-  const fetchRangeFiles = async (id: string, range = diffRange) => {
-    try {
-      const params = new URLSearchParams();
-      if (range.from) params.append('from', range.from);
-      if (range.to) params.append('to', range.to);
-      
-      const res = await fetch(`http://localhost:3001/api/repositories/${id}/files?${params.toString()}`);
-      const data = await res.json();
-      setRangeModifiedFiles(data.files || []);
-    } catch (err) {
-      console.error('Failed to fetch range files', err);
-    }
-  };
-
-  const fetchDiff = async (id: string, file: string | null, range = diffRange) => {
-    try {
-      const params = new URLSearchParams();
-      if (file) params.append('file', file);
-      if (range.from) params.append('from', range.from);
-      if (range.to) params.append('to', range.to);
-      
-      const url = `http://localhost:3001/api/repositories/${id}/diff?${params.toString()}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      setActiveDiff(data.diff);
-    } catch (err) {
-      console.error('Failed to fetch diff', err);
-    }
-  };
-
-  const submitAddRepo = async () => {
-    try {
-      const res = await fetch('http://localhost:3001/api/repositories', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: newRepoPath })
-      });
-      if (res.ok) {
-        setNewRepoPath('');
-        setShowAddModal(false);
-        fetchRepos();
-      }
-    } catch (err) {
-      console.error('Failed to add repo', err);
-    }
-  };
-
-  const handleAddRepo = (e: React.FormEvent) => {
-    e.preventDefault();
-    submitAddRepo();
-  };
-
-  const fetchBrowseEntries = async (dir?: string, hidden?: boolean) => {
-    setBrowseLoading(true);
-    setBrowseError('');
-    try {
-      const params = new URLSearchParams();
-      if (dir) params.set('dir', dir);
-      params.set('showHidden', String(hidden ?? showHidden));
-      const res = await fetch(`http://localhost:3001/api/browse?${params}`);
-      if (!res.ok) {
-        const data = await res.json();
-        setBrowseError(data.error || 'Failed to browse');
-        return;
-      }
-      const data = await res.json();
-      setBrowsePath(data.currentPath);
-      setBrowseEntries(data.entries);
-      setBrowseParentPath(data.parentPath);
-    } catch (err) {
-      setBrowseError('Failed to connect to server');
-    } finally {
-      setBrowseLoading(false);
-    }
-  };
-
-  const openAddModal = () => {
-    setShowAddModal(true);
-    setBrowseMode(true);
-    setNewRepoPath('');
-    setBrowseError('');
-    fetchBrowseEntries();
-  };
-
-  const handleDeleteRepo = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!confirm('Are you sure you want to remove this repository?')) return;
-    try {
-      const res = await fetch(`http://localhost:3001/api/repositories/${id}`, {
-        method: 'DELETE'
-      });
-      if (res.ok) {
-        if (activeRepoId === id) setActiveRepoId(null);
-        fetchRepos();
-      }
-    } catch (err) {
-      console.error('Failed to delete repo', err);
-    }
-  };
-
-  const filteredFiles = (diffRange.from ? rangeModifiedFiles : activeRepo?.status?.modifiedFiles || []).filter(f => 
-    f.toLowerCase().includes(searchTerm.toLowerCase())
-  );
 
   return (
     <div className="app-container">
       <aside className="sidebar" style={{ width: `${sidebarWidth}px`, flex: 'none' }}>
         <div className="sidebar-header">
-          <h2 
-            className="logo" 
-            onClick={() => {
-              setActiveRepoId(null);
-              setSelectedFile(null);
-            }}
-          >
-            ⛳️ Duff
-          </h2>
-          <button onClick={openAddModal} className="icon-btn" title="Add Repository">
-            <Plus size={20} />
-          </button>
+          <h2 className="logo" onClick={() => { setActiveId(null); setSelectedFile(null); }}>⛳️ Duff</h2>
+          <button onClick={() => setShowAddModal(true)} className="icon-btn"><Plus size={20} /></button>
         </div>
-        
         <DragDropContext onDragEnd={onDragEnd}>
-          <StrictModeDroppable droppableId="repositories">
+          <StrictModeDroppable droppableId="repos">
             {(provided) => (
-              <div 
-                className="repo-list" 
-                {...provided.droppableProps} 
-                ref={provided.innerRef}
-              >
-                {repositories.map((repo, index) => (
-                  <Draggable key={repo.id} draggableId={repo.id} index={index}>
-                    {(provided, snapshot) => (
-                      <div 
-                        ref={provided.innerRef}
-                        {...provided.draggableProps}
-                        className={`repo-item ${activeRepoId === repo.id ? 'active' : ''} ${snapshot.isDragging ? 'dragging' : ''}`}
-                        onClick={() => {
-                          setActiveRepoId(repo.id);
-                          setSelectedFile(null);
-                        }}
-                      >
+              <div className="repo-list" {...provided.droppableProps} ref={provided.innerRef}>
+                {isLoading ? <div style={{padding:'20px'}}>Loading...</div> : repos.map((repo, idx) => (
+                  <Draggable key={repo.id} draggableId={repo.id} index={idx}>
+                    {(p, snap) => (
+                      <div ref={p.innerRef} {...p.draggableProps} className={`repo-item ${activeId === repo.id ? 'active' : ''} ${snap.isDragging ? 'dragging' : ''} ${!repo.hasPermission ? 'permission-needed' : ''}`}
+                           onClick={() => { setActiveId(repo.id); setSelectedFile(null); setDiffRange({from:null,to:null}); if(!repo.hasPermission && repo.handle) handleGrant(repo); }}>
                         <div className="repo-main-content">
-                          <div className="drag-handle" {...provided.dragHandleProps}>
-                            <GripVertical size={16} />
-                          </div>
+                          <div className="drag-handle" {...p.dragHandleProps}><GripVertical size={16} /></div>
                           <div className="repo-info-container">
-                            <div className="repo-info">
-                              <span className="repo-name">{repo.name}</span>
-                              <div className="repo-actions">
-                                {repo.status?.hasChanges && <span className="change-badge"></span>}
-                                <button onClick={(e) => handleDeleteRepo(repo.id, e)} className="delete-btn icon-btn" title="Delete">
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                            </div>
-                            <div className="repo-details">
-                              <span className="repo-path">{repo.path}</span>
-                              <span className="repo-branch">
-                                <GitBranch size={12} /> {repo.status?.branch || '...'}
-                              </span>
-                            </div>
+                            <div className="repo-info"><span className="repo-name">{repo.name}</span><div className="repo-actions">{repo.status?.hasChanges && <span className="change-badge"></span>}<button onClick={async (e) => { e.stopPropagation(); if(confirm('Remove?')){ await repoStore.removeRepository(repo.id); setRepos(prev => prev.filter(r => r.id !== repo.id)); if(activeId === repo.id) setActiveId(null); } }} className="delete-btn icon-btn"><Trash2 size={14} /></button></div></div>
+                            <div className="repo-details">{!repo.hasPermission ? <span className="permission-msg"><Key size={10} /> Access Required</span> : <span className="repo-branch"><GitBranch size={12} /> {repo.status?.branch || '...'}</span>}</div>
                           </div>
                         </div>
                       </div>
@@ -531,22 +226,10 @@ function App() {
             )}
           </StrictModeDroppable>
         </DragDropContext>
-
-        <div className="sidebar-footer" onClick={() => setShowSettingsModal(true)}>
-          <Settings size={20} />
-          <span>Config</span>
-        </div>
+        <div className="sidebar-footer"><Settings size={20} /><span>Config</span></div>
       </aside>
 
-      <div className="resizer" onMouseDown={startResizing} />
-
-      {activeRepoId && (
-        <GitGraph 
-          repoId={activeRepoId} 
-          isVisible={showHistory} 
-          onSelectRange={(from, to) => setDiffRange({ from, to })} 
-        />
-      )}
+      <div className="resizer" onMouseDown={e => { isResizing.current = true; const move = (me: MouseEvent) => { if (!isResizing.current) return; setSidebarWidth(Math.max(200, Math.min(600, me.clientX))); }; const up = () => { isResizing.current = false; document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); }; document.addEventListener('mousemove', move); document.addEventListener('mouseup', up); }} />
 
       <main className="main-content">
         {activeRepo ? (
@@ -554,95 +237,57 @@ function App() {
             <header className="main-header">
               <div className="header-top">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <button 
-                    className={`icon-btn ${showHistory ? 'active' : ''}`} 
-                    onClick={() => setShowHistory(!showHistory)}
-                    title="Toggle History"
-                  >
-                    <History size={18} />
-                  </button>
-                  <h3>{activeRepo.name} <span className="branch-label">({activeRepo.status?.branch})</span></h3>
+                  <button onClick={() => setShowHistory(!showHistory)} className={`icon-btn ${showHistory ? 'active' : ''}`}><History size={18} /></button>
+                  <h3>{activeRepo.name} <span className="branch-label">({activeRepo.status?.branch || '...'})</span></h3>
                 </div>
                 <div className="header-meta">
-                  <span>Last updated: {activeRepo.status?.lastUpdate ? new Date(activeRepo.status.lastUpdate).toLocaleTimeString() : '...'}</span>
-                  <button onClick={updateActiveRepoStatus} className="icon-btn"><RefreshCw size={16} /></button>
+                  <span>Last updated: {activeStatus?.lastUpdate ? new Date(activeStatus.lastUpdate).toLocaleTimeString() : '...'}</span>
+                  <button onClick={() => activeHandle && updateStatus(activeId!, activeHandle)} className="icon-btn"><RefreshCw size={16} className={isUpdating ? 'animate-spin' : ''} /></button>
                 </div>
               </div>
-              
-              <div className="search-bar">
-                <Search size={18} />
-                <input 
-                  type="text" 
-                  placeholder="Filter files..." 
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
+              <div className="search-bar"><Search size={18} /><input type="text" placeholder="Filter files..." value={searchTerm} onChange={e => setSearchTerm(e.target.value)} /></div>
             </header>
-
             <div className="content-body">
-              <div className="file-list">
-                <h4>Modified Files</h4>
-                <ul>
-                  <li 
-                    className={selectedFile === null ? 'selected' : ''} 
-                    onClick={() => setSelectedFile(null)}
-                  >
-                    All Changes
-                  </li>
-                  {filteredFiles.map(file => {
-                    const { dir, name } = splitFilePath(file);
-                    return (
-                      <li
-                        key={file}
-                        className={selectedFile === file ? 'selected' : ''}
-                        onClick={() => setSelectedFile(file)}
-                      >
-                        <span className="file-path-text">
-                          {dir && <span className="file-dir">{dir}</span>}
-                          <span className="file-name">{name}</span>
-                        </span>
-                        <button
-                          className="copy-filename-btn"
-                          title={`Copy filename: ${name}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            navigator.clipboard.writeText(name);
-                          }}
-                        >
-                          <Copy size={12} />
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-
-              <div className="diff-viewer">
-                {selectedFile && isImageFile(selectedFile) && activeRepoId ? (
-                  <ImageDiffView 
-                    repoId={activeRepoId} 
-                    file={selectedFile} 
-                    lastUpdate={activeRepo?.status?.lastUpdate} 
-                  />
-                ) : activeDiff ? (
-                  <DiffView diff={activeDiff} />
-                ) : (
-                  <div className="no-diff">
-                    <div className="humor-message">
-                      <span className="emoji">⛳️</span>
-                      <p>No changes on this hole! Looks like a perfect par.</p>
-                      <small>Everything is clean in {selectedFile || 'the working tree'}.</small>
-                    </div>
+              {!activeRepo.hasPermission ? (
+                 <div className="permission-required-view"><ShieldAlert size={48} /><h3>Permission Required</h3><button className="primary" onClick={() => handleGrant(activeRepo)}>Grant Access</button></div>
+              ) : (
+                <>
+                  <div className="file-list">
+                    <h4>Modified Files ({activeFiles.length})</h4>
+                    <ul>
+                      <li className={selectedFile === null ? 'selected' : ''} onClick={() => setSelectedFile(null)}>All Changes</li>
+                      {activeFiles.map(f => {
+                        const { dir, name } = splitFilePath(f);
+                        return (
+                          <li key={f} className={selectedFile === f ? 'selected' : ''} onClick={() => setSelectedFile(f)}>
+                            <span className="file-path-text">{dir && <span className="file-dir">{dir}</span>}<span>{name}</span></span>
+                            <button className="copy-filename-btn" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(name); }}><Copy size={12} /></button>
+                          </li>
+                        );
+                      })}
+                    </ul>
                   </div>
-                )}
-              </div>
+                  <div className="diff-viewer">
+                    {showHistory ? (
+                      <GitGraph repoId={activeId!} handle={activeHandle || null} isVisible={true} onSelectRange={(from, to) => { setDiffRange({ from, to }); setSelectedFile(null); }} />
+                    ) : (
+                      selectedFile && isImageFile(selectedFile) ? (
+                        <ImageDiffView handle={activeHandle || null} file={selectedFile} lastUpdate={activeStatus?.lastUpdate} range={diffRange} />
+                      ) : (
+                        <DiffView diff={activeDiff} />
+                      )
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </>
         ) : (
-          <div className="welcome" style={{ display: 'flex', flexDirection: 'column', flex: 1, width: '100%', minWidth: '100%', height: '100%', justifyContent: 'center', alignItems: 'center', position: 'relative', overflow: 'hidden', margin: 0, padding: 0 }}>
-            <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', zIndex: 0 }}>
-              <LiquidGreen />
+          <div className="welcome">
+            <div style={{ position: 'absolute', width: '100%', height: '100%', pointerEvents: 'none' }}><LiquidGreen /></div>
+            <div className="welcome-content" style={{ zIndex: 1, textAlign: 'center', backgroundColor: 'rgba(255,255,255,0.8)', padding: '40px', borderRadius: '16px', backdropFilter: 'blur(10px)' }}>
+               <h1>🏌️‍♂️ Welcome to Duff</h1><p>Visualize your progress across multiple Git repositories.</p>
+               <button className="primary" onClick={() => setShowAddModal(true)} style={{ marginTop: '1rem' }}><Plus size={18} style={{ marginRight: '8px' }} />Add your first repository</button>
             </div>
           </div>
         )}
@@ -650,143 +295,19 @@ function App() {
 
       {showAddModal && (
         <div className="modal-overlay">
-          <div className="modal modal-browse">
-            <div className="modal-header-row">
-              <h3>Add Repository</h3>
-              <button className="icon-btn" onClick={() => setShowAddModal(false)}>
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="browse-tabs">
-              <button
-                className={`browse-tab ${browseMode ? 'active' : ''}`}
-                onClick={() => { setBrowseMode(true); if (!browsePath) fetchBrowseEntries(); }}
-              >
-                Browse
-              </button>
-              <button
-                className={`browse-tab ${!browseMode ? 'active' : ''}`}
-                onClick={() => setBrowseMode(false)}
-              >
-                Enter Path
-              </button>
-            </div>
-
-            {browseMode ? (
-              <div className="browse-container">
-                <div className="browse-current-path">
-                  <span className="browse-path-label">{browsePath}</span>
-                  <label className="browse-hidden-toggle">
-                    <input
-                      type="checkbox"
-                      checked={showHidden}
-                      onChange={(e) => {
-                        setShowHidden(e.target.checked);
-                        fetchBrowseEntries(browsePath, e.target.checked);
-                      }}
-                    />
-                    Show hidden
-                  </label>
-                </div>
-
-                {browseError && <div className="browse-error">{browseError}</div>}
-
-                <div className="browse-list">
-                  {browseLoading ? (
-                    <div className="browse-loading">Loading...</div>
-                  ) : (
-                    <>
-                      {browseParentPath && (
-                        <div
-                          className="browse-item browse-parent"
-                          onClick={() => fetchBrowseEntries(browseParentPath)}
-                        >
-                          <ChevronUp size={16} className="browse-item-icon" />
-                          <span className="browse-item-name">Parent Directory</span>
-                        </div>
-                      )}
-                      {browseEntries.map((entry) => (
-                        <div
-                          key={entry.path}
-                          className={`browse-item ${entry.isGitRepo ? 'browse-git-repo' : ''} ${newRepoPath === entry.path ? 'browse-selected' : ''}`}
-                          onClick={() => setNewRepoPath(entry.path)}
-                          onDoubleClick={() => fetchBrowseEntries(entry.path)}
-                        >
-                          {entry.isGitRepo ? (
-                            <FolderGit2 size={16} className="browse-item-icon browse-icon-git" />
-                          ) : (
-                            <Folder size={16} className="browse-item-icon" />
-                          )}
-                          <span className="browse-item-name">{entry.name}</span>
-                          {entry.isGitRepo && (
-                            <span className="browse-git-badge">
-                              <GitBranch size={12} /> Git
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                      {browseEntries.length === 0 && !browseLoading && (
-                        <div className="browse-empty">No subdirectories found</div>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                <div className="browse-footer">
-                  <input
-                    type="text"
-                    className="browse-selected-path"
-                    value={newRepoPath}
-                    onChange={(e) => setNewRepoPath(e.target.value)}
-                    placeholder="Selected path or type manually..."
-                  />
-                  <div className="modal-actions">
-                    <button type="button" onClick={() => setShowAddModal(false)}>Cancel</button>
-                    <button
-                      className="primary"
-                      disabled={!newRepoPath}
-                      onClick={submitAddRepo}
-                    >
-                      Add
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <form onSubmit={handleAddRepo}>
-                <input
-                  type="text"
-                  placeholder="/absolute/path/to/repo"
-                  value={newRepoPath}
-                  onChange={(e) => setNewRepoPath(e.target.value)}
-                  autoFocus
-                />
-                <div className="modal-actions">
-                  <button type="button" onClick={() => setShowAddModal(false)}>Cancel</button>
-                  <button type="submit" className="primary">Add</button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
-
-      {showSettingsModal && (
-        <div className="modal-overlay">
           <div className="modal">
-            <h3>Settings</h3>
-            <div className="settings-field">
-              <label>Active Poll Interval (seconds):</label>
-              <input 
-                type="number" 
-                value={globalInterval}
-                onChange={(e) => setGlobalInterval(Number(e.target.value))}
-                min="5"
-              />
-            </div>
-            <div className="modal-actions">
-              <button type="button" className="primary" onClick={() => setShowSettingsModal(false)}>Close</button>
+            <h3>Add Repository</h3>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+              <button onClick={() => setShowAddModal(false)}>Cancel</button>
+              <button className="primary" onClick={async () => {
+                try {
+                  const h = await (window as any).showDirectoryPicker();
+                  const m = await repoStore.addRepository(h);
+                  setRepos(prev => [...prev, { ...m, handle: h, hasPermission: true }]);
+                  setShowAddModal(false);
+                  updateStatus(m.id, h);
+                } catch (e) {}
+              }}>Select Folder</button>
             </div>
           </div>
         </div>

@@ -7,7 +7,7 @@ import crypto from 'crypto';
 import { simpleGit, type SimpleGit } from 'simple-git';
 const app = express();
 const port = process.env.PORT || 3001;
-const REPO_FILE = path.join(__dirname, '../repositories.json');
+const REPO_FILE = process.env.REPO_FILE || path.join(__dirname, '../repositories.json');
 
 app.use(cors());
 app.use(express.json());
