@@ -2,7 +2,6 @@
 
 ![build status](https://github.com/chigichan24/duff/actions/workflows/ci.yml/badge.svg)
 
-
 **⛳️ duff** is a specialized tool designed to visualize progress across multiple repositories, focusing specifically on tracking status through the familiar `git diff` format.
 
 ![](docs/screenshot.png)
@@ -14,6 +13,8 @@ Visual diff is also supported.
 
 * **Multi-Repo Visualization**: Monitor the status of multiple Git repositories from a single, unified dashboard.
 * **Git Diff Focus**: Gain deep insights into changes with high-fidelity `git diff` renderings.
+* **Interactive History Graph**: Visualize commit history and stashes with an intuitive graph interface.
+* **Flexible Diff Ranges**: Select and compare changes between any two points in history (commits, stashes, or the working tree).
 * **Visual Image Diff**: Detect even subtle changes in images (`png`, `jpg`, `webp`, `svg`) with pixel-perfect comparison using `pixelmatch`.
 * **Optimized for the AI Era**: Quickly grasp development progress to facilitate seamless collaboration between humans and AI.
 
@@ -47,9 +48,20 @@ cd duff
 
 ### 2. Install Dependencies
 Install the required packages in the root, client, and server directories.
+
 ```bash
-# Install root dependencies (e.g., concurrently)
+# Install root dependencies
 npm install
+
+# Install client dependencies
+cd client
+npm install
+cd ..
+
+# Install server dependencies
+cd server
+npm install
+cd ..
 ```
 
 ### 3. Start the Development Server
@@ -64,7 +76,7 @@ npm run dev
 ├── client/          # Frontend (React + Vite)
 ├── server/          # Backend (Express)
 ├── package.json     # Monorepo management
-└── history.log      # Update history
+└── history.log      # User interaction history
 ```
 
 ### License
