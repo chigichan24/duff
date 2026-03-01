@@ -223,13 +223,10 @@ app.get('/api/repositories/:id/diff', async (req, res) => {
     const args = ['--no-color'];
     
     if (from && to) {
-      // Diff between two commits
       args.push(`${from}..${to}`);
     } else if (from) {
-      // Diff between commit and working tree (or HEAD if implied, but usually working tree if just 'git diff <commit>')
       args.push(from as string);
     } else {
-      // Default: Diff between HEAD and working tree
       args.push('HEAD');
     }
 
@@ -237,6 +234,35 @@ app.get('/api/repositories/:id/diff', async (req, res) => {
     
     const diff = await git.diff(args);
     res.json({ diff });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/repositories/:id/files', async (req, res) => {
+  const { id } = req.params;
+  const { from, to } = req.query;
+  const repo = getRepositories().find(r => r.id === id);
+  
+  if (!repo) return res.status(404).json({ error: 'Repository not found' });
+
+  try {
+    const git: SimpleGit = simpleGit(repo.path);
+    const args = ['--name-only'];
+    
+    if (from && to) {
+      args.push(`${from}..${to}`);
+    } else if (from) {
+      args.push(from as string);
+    } else {
+      // Default: show working tree changes (status)
+      const status = await git.status();
+      return res.json({ files: status.files.map(f => f.path) });
+    }
+
+    const filesString = await git.diff(args);
+    const files = filesString.split('\n').filter(f => f.trim() !== '');
+    res.json({ files });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
