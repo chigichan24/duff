@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { Copy, Check } from 'lucide-react';
 import './GitGraph.css';
 
 export interface LogEntry {
@@ -45,6 +46,7 @@ const GitGraph: React.FC<GitGraphProps> = ({ repoId, isVisible, onSelectRange })
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [selection, setSelection] = useState<{ from: string | null; to: string | null }>({ from: null, to: null });
+  const [copiedHash, setCopiedHash] = useState<string | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   useEffect(() => {
@@ -87,6 +89,13 @@ const GitGraph: React.FC<GitGraphProps> = ({ repoId, isVisible, onSelectRange })
 
     setSelection(newSelection);
     onSelectRange(newSelection.from, newSelection.to);
+  };
+
+  const copyToClipboard = (text: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(text);
+    setCopiedHash(text);
+    setTimeout(() => setCopiedHash(null), 2000);
   };
 
   const graphData = useMemo(() => {
@@ -210,22 +219,13 @@ const GitGraph: React.FC<GitGraphProps> = ({ repoId, isVisible, onSelectRange })
                    );
                 }
 
-                return <>{lines}</>;
+                return <React.Fragment key={i}>{lines}</React.Fragment>;
               })}
 
               {/* Nodes */}
               {graphData.map((node) => {
                 const isWorkingTree = node.hash === 'WORKING_TREE';
                 const isSelectedFrom = selection.from === node.hash || (isWorkingTree && selection.from === null && selection.to === null);
-                // logic for "Working Tree" selection is tricky. 
-                // Default: from=null, to=null -> Working Tree vs HEAD (diff view defaults to this).
-                // But in graph, Working Tree node represents the "dirty state".
-                // If I click a commit, that becomes 'from'. 'to' becomes null (Working Tree).
-                // If I click Working Tree node, it should probably clear selection (reset to default).
-                
-                // Update: selection logic in handleNodeClick
-                // hash=null passed for Working Tree
-                
                 const isSelectedTo = selection.to === node.hash;
                 
                 let stroke = 'transparent';
@@ -253,26 +253,32 @@ const GitGraph: React.FC<GitGraphProps> = ({ repoId, isVisible, onSelectRange })
                       stroke={stroke}
                       strokeWidth={strokeWidth}
                     />
-                    <text 
-                      x={node.x + 20} 
-                      y={node.y + 4} 
-                      className="graph-label"
-                      style={{ 
-                        fontSize: '12px', 
-                        fill: isSelectedFrom || isSelectedTo ? 'var(--text-primary)' : 'var(--text-secondary)',
-                        fontWeight: isSelectedFrom || isSelectedTo ? 600 : 400
-                      }}
+                    <foreignObject 
+                        x={node.x + 15} 
+                        y={node.y - 12} 
+                        width="240" 
+                        height="40"
                     >
-                      {node.message}
-                    </text>
-                    <text 
-                      x={node.x + 20} 
-                      y={node.y + 18} 
-                      className="graph-meta"
-                      style={{ fontSize: '10px', fill: 'var(--text-tertiary)' }}
-                    >
-                       {isWorkingTree ? 'Current Changes' : `${node.hash.substring(0, 7)} • ${node.author_name}`}
-                    </text>
+                        <div className={`graph-node-info ${isSelectedFrom || isSelectedTo ? 'selected' : ''}`}>
+                            <div className="node-msg-row">
+                                <span className="node-message" title={node.message}>
+                                    {node.message.split('\n')[0]}
+                                </span>
+                                {!isWorkingTree && (
+                                    <button 
+                                        className="copy-hash-btn" 
+                                        onClick={(e) => copyToClipboard(node.hash, e)}
+                                        title="Copy Hash"
+                                    >
+                                        {copiedHash === node.hash ? <Check size={10} /> : <Copy size={10} />}
+                                    </button>
+                                )}
+                            </div>
+                            <div className="node-meta-row">
+                                {isWorkingTree ? 'Current Changes' : `${node.hash.substring(0, 7)} • ${node.author_name}`}
+                            </div>
+                        </div>
+                    </foreignObject>
                   </g>
                 );
               })}
