@@ -1,0 +1,106 @@
+.git-graph-panel {
+  width: 300px;
+  background-color: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  flex: none;
+}
+
+.git-graph-header {
+  padding: 10px;
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--bg-tertiary);
+}
+
+.git-graph-header h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.git-graph-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.simple-log-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.log-item {
+  display: flex;
+  align-items: flex-start;
+  padding: 10px;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.log-item:hover {
+  background-color: var(--hover-color);
+}
+
+.log-item.selected-from {
+  background-color: rgba(0, 128, 0, 0.1);
+  border-left: 3px solid #00c853;
+}
+
+.log-node {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 10px;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.node-commit {
+  background-color: #3b82f6;
+}
+
+.node-stash {
+  background-color: #f59e0b;
+}
+
+.node-working {
+  background-color: #10b981;
+  border: 2px solid #059669;
+}
+
+.log-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.log-msg {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+
+.log-meta {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.stash-badge {
+  background-color: #f59e0b;
+  color: white;
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-size: 9px;
+  margin-left: 5px;
+  font-weight: bold;
+}
