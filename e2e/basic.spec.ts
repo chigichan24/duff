@@ -179,7 +179,7 @@ test.describe('Repository Management (Serverless)', () => {
 
     await repoItem.click();
     await expect(page.getByText('Modified Files')).toBeVisible();
-    await expect(page.getByText('No changes on this hole')).toBeVisible();
+    await expect(page.getByText('No changes detected.')).toBeVisible();
 
     updateFile(repoPath, 'README.md', '# Test Repo\nModified content');
     await page.locator('.header-meta button').click();
