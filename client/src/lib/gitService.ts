@@ -20,6 +20,13 @@ export interface RepoStatus {
 
 const gitConfig = { dir: '.', gitdir: '.git' };
 
+// Shared isomorphic-git cache for packfile/object lookups
+const gitCache = {};
+
+// Cache resolved refs to avoid repeated FS access
+const refCache = new Map<string, { oid: string; ts: number }>();
+const REF_CACHE_TTL = 5000; // 5 seconds
+
 export const gitService = {
   async getStatus(handle: FileSystemDirectoryHandle): Promise<RepoStatus> {
     const fs = createFsaAdapter(handle);
@@ -33,10 +40,10 @@ export const gitService = {
       } catch(e2) {}
     }
 
-    // フィルタリングを効かせて走査
-    const matrix = await git.statusMatrix({ 
-        fs, 
+    const matrix = await git.statusMatrix({
+        fs,
         ...gitConfig,
+        cache: gitCache,
         filter: path => !path.startsWith('node_modules/') && !path.startsWith('.git/') && !path.startsWith('dist/')
     });
 
@@ -55,7 +62,7 @@ export const gitService = {
   async getLog(handle: FileSystemDirectoryHandle) {
     const fs = createFsaAdapter(handle);
     try {
-      const log = await git.log({ fs, ...gitConfig, depth: 50 });
+      const log = await git.log({ fs, ...gitConfig, depth: 50, cache: gitCache });
       return log.map(c => ({
         hash: c.oid,
         date: new Date(c.commit.author.timestamp * 1000).toISOString(),
@@ -75,17 +82,11 @@ export const gitService = {
             return s.modifiedFiles;
         }
 
-        // コミット範囲が指定された場合、TREE を比較してファイル一覧を取得
         if (from) {
-          const resolveOid = async (ref: string): Promise<string> => {
-            if (/^[0-9a-f]{40}$/.test(ref)) return ref;
-            return await git.resolveRef({ fs, ...gitConfig, ref });
-          };
-
           const getTreeFiles = async (oid: string): Promise<Map<string, string>> => {
             const files = new Map<string, string>();
             const walkTree = async (treeOid: string, prefix: string) => {
-              const { tree } = await git.readTree({ fs, ...gitConfig, oid: treeOid });
+              const { tree } = await git.readTree({ fs, ...gitConfig, oid: treeOid, cache: gitCache });
               for (const entry of tree) {
                 const path = prefix ? `${prefix}/${entry.path}` : entry.path;
                 if (entry.type === 'blob') {
@@ -95,8 +96,8 @@ export const gitService = {
                 }
               }
             };
-            const commitOid = await resolveOid(oid);
-            const { object } = await git.readObject({ fs, ...gitConfig, oid: commitOid });
+            const commitOid = await this._resolveOid(fs, oid);
+            const { object } = await git.readObject({ fs, ...gitConfig, oid: commitOid, cache: gitCache });
             const treeOid = (object as any).tree;
             await walkTree(treeOid, '');
             return files;
@@ -107,39 +108,36 @@ export const gitService = {
           if (to) {
             const toFiles = await getTreeFiles(to);
             const changed: string[] = [];
-            // Files changed or added in 'to' compared to 'from'
             for (const [path, oid] of toFiles) {
               if (fromFiles.get(path) !== oid) changed.push(path);
             }
-            // Files deleted in 'to'
             for (const path of fromFiles.keys()) {
               if (!toFiles.has(path)) changed.push(path);
             }
             return changed.sort();
           } else {
-            // Compare from commit to working tree
             const s = await this.getStatus(handle);
             return s.modifiedFiles;
           }
         }
 
-        const matrix = await git.statusMatrix({ fs, ...gitConfig });
+        const matrix = await git.statusMatrix({ fs, ...gitConfig, cache: gitCache });
         return matrix.filter(row => row[1] !== row[2]).map(row => row[0]);
     } catch (e) { return []; }
   },
 
-  async getDiff(handle: FileSystemDirectoryHandle, file?: string, from?: string, to?: string): Promise<string> {
+  /**
+   * getDiff accepts an optional knownFiles to avoid re-running statusMatrix.
+   * When called from App.tsx after updateStatus, pass modifiedFiles directly.
+   */
+  async getDiff(handle: FileSystemDirectoryHandle, file?: string, from?: string, to?: string, knownFiles?: string[]): Promise<string> {
     const fs = createFsaAdapter(handle);
 
-    const resolveOid = async (ref: string): Promise<string> => {
-      if (/^[0-9a-f]{40}$/.test(ref)) return ref;
-      return await git.resolveRef({ fs, ...gitConfig, ref });
-    };
+    const headOid = await this._resolveOid(fs, from || 'HEAD');
 
-    const getBlob = async (ref: string, path: string): Promise<string> => {
+    const getBlob = async (oid: string, path: string): Promise<string> => {
       try {
-        const oid = await resolveOid(ref);
-        const { blob } = await git.readBlob({ fs, ...gitConfig, oid, filepath: path });
+        const { blob } = await git.readBlob({ fs, ...gitConfig, oid, filepath: path, cache: gitCache });
         return new TextDecoder().decode(blob);
       } catch (e) { return ''; }
     };
@@ -150,12 +148,22 @@ export const gitService = {
       } catch (e) { return ''; }
     };
 
-    const files = file ? [file] : await this.getFiles(handle, from, to);
-    let fullDiff = '';
+    // Use knownFiles to skip expensive getFiles/getStatus re-call
+    let files: string[];
+    if (file) {
+      files = [file];
+    } else if (knownFiles && !from && !to) {
+      files = knownFiles;
+    } else {
+      files = await this.getFiles(handle, from, to);
+    }
 
+    const toOid = to ? await this._resolveOid(fs, to) : null;
+
+    let fullDiff = '';
     for (const f of files) {
-      const oldC = await getBlob(from || 'HEAD', f);
-      const newC = to ? await getBlob(to, f) : await getWorking(f);
+      const oldC = await getBlob(headOid, f);
+      const newC = toOid ? await getBlob(toOid, f) : await getWorking(f);
       if (oldC === newC && !file) continue;
       fullDiff += createPatch(f, oldC, newC, from || 'HEAD', to || 'Working Tree');
     }
@@ -166,14 +174,21 @@ export const gitService = {
     const fs = createFsaAdapter(handle);
     try {
       if (version) {
-        let oid = version;
-        if (!/^[0-9a-f]{40}$/.test(version)) {
-          oid = await git.resolveRef({ fs, ...gitConfig, ref: version });
-        }
-        const { blob } = await git.readBlob({ fs, ...gitConfig, oid, filepath: filePath });
+        const oid = await this._resolveOid(fs, version);
+        const { blob } = await git.readBlob({ fs, ...gitConfig, oid, filepath: filePath, cache: gitCache });
         return blob;
       }
       return await fs.readFile(filePath);
     } catch (e) { return null; }
+  },
+
+  /** Resolve a ref (e.g. 'HEAD') to a commit oid, with short TTL cache */
+  async _resolveOid(fs: any, ref: string): Promise<string> {
+    if (/^[0-9a-f]{40}$/.test(ref)) return ref;
+    const cached = refCache.get(ref);
+    if (cached && Date.now() - cached.ts < REF_CACHE_TTL) return cached.oid;
+    const oid = await git.resolveRef({ fs, ...gitConfig, ref });
+    refCache.set(ref, { oid, ts: Date.now() });
+    return oid;
   }
 };

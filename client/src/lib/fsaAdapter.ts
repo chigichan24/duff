@@ -1,8 +1,13 @@
 import { Buffer } from 'buffer';
 
-const handleCache = new Map<string, FileSystemHandle>();
+// Per-root handle cache to avoid cross-repo pollution
+const adapterCache = new WeakMap<FileSystemDirectoryHandle, any>();
 
 export const createFsaAdapter = (rootHandle: FileSystemDirectoryHandle): any => {
+  if (adapterCache.has(rootHandle)) return adapterCache.get(rootHandle);
+
+  const handleCache = new Map<string, FileSystemHandle>();
+
   const getHandle = async (pathStr: string) => {
     if (!pathStr || pathStr === '.' || pathStr === '/') return rootHandle;
     if (handleCache.has(pathStr)) return handleCache.get(pathStr);
@@ -19,11 +24,13 @@ export const createFsaAdapter = (rootHandle: FileSystemDirectoryHandle): any => 
           continue;
       }
       try {
-        if (i === parts.length - 1) {
-          try { current = await current.getDirectoryHandle(part); }
-          catch { current = await current.getFileHandle(part); }
-        } else {
+        // Try directory first for non-leaf, file first for leaf
+        if (i < parts.length - 1) {
           current = await current.getDirectoryHandle(part);
+        } else {
+          // Leaf: try file first (most common case for readFile/stat), fall back to dir
+          try { current = await current.getFileHandle(part); }
+          catch { current = await current.getDirectoryHandle(part); }
         }
         handleCache.set(currentPath, current);
       } catch (e) {
@@ -96,5 +103,7 @@ export const createFsaAdapter = (rootHandle: FileSystemDirectoryHandle): any => 
     async symlink() { }
   };
   fs.promises = fs;
+
+  adapterCache.set(rootHandle, fs);
   return fs;
 };

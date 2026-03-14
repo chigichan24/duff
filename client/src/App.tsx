@@ -195,10 +195,12 @@ function App() {
 
   useEffect(() => {
     if (activeHandle && activeRepo?.hasPermission) {
-        gitService.getDiff(activeHandle, selectedFile || undefined, diffRange.from || undefined, diffRange.to || undefined)
+        // Pass knownFiles to avoid re-running statusMatrix inside getDiff
+        const known = activeId ? modifiedFiles[activeId] : undefined;
+        gitService.getDiff(activeHandle, selectedFile || undefined, diffRange.from || undefined, diffRange.to || undefined, known)
             .then(setActiveDiff).catch(() => setActiveDiff(''));
     } else setActiveDiff('');
-  }, [activeHandle, selectedFile, activeRepo?.hasPermission, activeStatus?.lastUpdate, diffRange]);
+  }, [activeHandle, activeId, selectedFile, activeRepo?.hasPermission, activeStatus?.lastUpdate, diffRange, modifiedFiles]);
 
   const handleGrant = async (repo: Repository) => {
     if (!repo.handle) return;
