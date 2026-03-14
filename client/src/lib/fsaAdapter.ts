@@ -1,7 +1,16 @@
 import { Buffer } from 'buffer';
 
-// Per-root handle cache to avoid cross-repo pollution
 const adapterCache = new WeakMap<FileSystemDirectoryHandle, any>();
+
+function splitPath(path: string): string[] {
+  return path.split('/').filter(p => p && p !== '.');
+}
+
+function splitParentAndName(path: string): { parentPath: string; name: string } {
+  const parts = splitPath(path);
+  const name = parts.pop()!;
+  return { parentPath: parts.join('/'), name };
+}
 
 export const createFsaAdapter = (rootHandle: FileSystemDirectoryHandle): any => {
   if (adapterCache.has(rootHandle)) return adapterCache.get(rootHandle);
@@ -12,7 +21,7 @@ export const createFsaAdapter = (rootHandle: FileSystemDirectoryHandle): any => 
     if (!pathStr || pathStr === '.' || pathStr === '/') return rootHandle;
     if (handleCache.has(pathStr)) return handleCache.get(pathStr);
 
-    const parts = pathStr.split('/').filter(p => p && p !== '.');
+    const parts = splitPath(pathStr);
     let current: any = rootHandle;
     let currentPath = '';
 
@@ -24,11 +33,9 @@ export const createFsaAdapter = (rootHandle: FileSystemDirectoryHandle): any => 
           continue;
       }
       try {
-        // Try directory first for non-leaf, file first for leaf
         if (i < parts.length - 1) {
           current = await current.getDirectoryHandle(part);
         } else {
-          // Leaf: try file first (most common case for readFile/stat), fall back to dir
           try { current = await current.getFileHandle(part); }
           catch { current = await current.getDirectoryHandle(part); }
         }
@@ -52,8 +59,8 @@ export const createFsaAdapter = (rootHandle: FileSystemDirectoryHandle): any => 
       return Buffer.from(u8);
     },
     async writeFile(path: string, data: any) {
-      const parts = path.split('/').filter(p => p && p !== '.');
-      const name = parts.pop()!;
+      const { parentPath, name } = splitParentAndName(path);
+      const parts = splitPath(parentPath);
       let current: any = rootHandle;
       for (const p of parts) current = await current.getDirectoryHandle(p, { create: true });
       const handle = await current.getFileHandle(name, { create: true });
@@ -83,20 +90,18 @@ export const createFsaAdapter = (rootHandle: FileSystemDirectoryHandle): any => 
     },
     async lstat(path: string) { return this.stat(path); },
     async unlink(path: string) {
-      const parts = path.split('/').filter(p => p && p !== '.');
-      const name = parts.pop()!;
-      const parent: any = await getHandle(parts.join('/'));
+      const { parentPath, name } = splitParentAndName(path);
+      const parent: any = await getHandle(parentPath);
       await parent.removeEntry(name);
     },
     async mkdir(path: string) {
-      const parts = path.split('/').filter(p => p && p !== '.');
+      const parts = splitPath(path);
       let current: any = rootHandle;
       for (const p of parts) current = await current.getDirectoryHandle(p, { create: true });
     },
     async rmdir(path: string) {
-      const parts = path.split('/').filter(p => p && p !== '.');
-      const name = parts.pop()!;
-      const parent: any = await getHandle(parts.join('/'));
+      const { parentPath, name } = splitParentAndName(path);
+      const parent: any = await getHandle(parentPath);
       await parent.removeEntry(name, { recursive: true });
     },
     async readlink() { return ''; },

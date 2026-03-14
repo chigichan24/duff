@@ -33,6 +33,12 @@ const isImageFile = (filename: string | null) => {
   return ext && ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext);
 };
 
+function arraysEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) { if (a[i] !== b[i]) return false; }
+  return true;
+}
+
 const ImageDiffView = ({ handle, file, lastUpdate, range }: { handle: FileSystemDirectoryHandle | null; file: string; lastUpdate?: string; range: { from: string | null; to: string | null } }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -44,8 +50,10 @@ const ImageDiffView = ({ handle, file, lastUpdate, range }: { handle: FileSystem
     if (!handle) return;
     let bUrl: string | null = null, aUrl: string | null = null;
     const loadImages = async () => {
-      const bData = await gitService.getFileContent(handle, file, range.from || 'HEAD');
-      const aData = await gitService.getFileContent(handle, file, range.to || undefined);
+      const [bData, aData] = await Promise.all([
+        gitService.getFileContent(handle, file, range.from || 'HEAD'),
+        gitService.getFileContent(handle, file, range.to || undefined),
+      ]);
       if (bData) { bUrl = URL.createObjectURL(new Blob([bData as BlobPart])); setBeforeUrl(bUrl); } else setBeforeUrl(null);
       if (aData) { aUrl = URL.createObjectURL(new Blob([aData as BlobPart])); setAfterUrl(aUrl); } else setAfterUrl(null);
     };
@@ -129,7 +137,6 @@ function App() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [activeDiff, setActiveDiff] = useState('');
-  const [modifiedFiles, setModifiedFiles] = useState<Record<string, string[]>>({});
   const [searchTerm, setSearchTerm] = useState('');
   const [showHistory, setShowHistory] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -142,33 +149,42 @@ function App() {
   const [sidebarWidth, setSidebarWidth] = useState(350);
   const isResizing = useRef(false);
 
-  const activeRepo = useMemo(() => repos.find(r => r.id === activeId), [repos, activeId]);
-  const activeHandle = useMemo(() => activeRepo?.handle, [activeRepo]);
-  const activeStatus = useMemo(() => activeRepo?.status, [activeRepo]);
+  const activeRepo = repos.find(r => r.id === activeId);
+  const activeHandle = activeRepo?.handle;
+  const activeStatus = activeRepo?.status;
+  // Derive modifiedFiles from repos state instead of maintaining separate state
+  const currentModifiedFiles = activeStatus?.modifiedFiles || [];
   const activeFiles = useMemo(() => {
-    const files = diffRange.from ? rangeModifiedFiles : (activeId ? modifiedFiles[activeId] || [] : []);
+    const files = diffRange.from ? rangeModifiedFiles : currentModifiedFiles;
     return files.filter(f => f.toLowerCase().includes(searchTerm.toLowerCase()));
-  }, [activeId, modifiedFiles, rangeModifiedFiles, diffRange.from, searchTerm]);
+  }, [currentModifiedFiles, rangeModifiedFiles, diffRange.from, searchTerm]);
 
   const updateStatus = useCallback(async (id: string, handle: FileSystemDirectoryHandle) => {
     setIsUpdating(true);
     try {
       const status = await gitService.getStatus(handle);
-      setRepos(prev => prev.map(r => r.id === id ? { ...r, status } : r));
-      setModifiedFiles(prev => ({ ...prev, [id]: status.modifiedFiles }));
+      setRepos(prev => {
+        const existing = prev.find(r => r.id === id);
+        // Skip update if nothing changed to avoid unnecessary re-renders
+        if (existing?.status &&
+            existing.status.branch === status.branch &&
+            arraysEqual(existing.status.modifiedFiles, status.modifiedFiles)) {
+          return prev;
+        }
+        return prev.map(r => r.id === id ? { ...r, status } : r);
+      });
     } catch (err) { console.error(err); } finally { setIsUpdating(false); }
   }, []);
 
   useEffect(() => {
     (async () => {
       const metas = await repoStore.getRepositories();
-      const list: Repository[] = [];
-      for (const m of metas) {
+      // Parallel handle + permission resolution
+      const list = await Promise.all(metas.map(async (m): Promise<Repository> => {
         const h = await repoStore.getHandle(m.id);
-        const r: Repository = { ...m, handle: h, hasPermission: false };
-        if (h && (await (h as any).queryPermission({ mode: 'readwrite' })) === 'granted') r.hasPermission = true;
-        list.push(r);
-      }
+        const hasPermission = h ? await repoStore.checkPermission(h) : false;
+        return { ...m, handle: h, hasPermission };
+      }));
       setRepos(list); setIsLoading(false);
       if (list[0]?.hasPermission && list[0].handle) updateStatus(list[0].id, list[0].handle);
     })();
@@ -184,22 +200,21 @@ function App() {
   // Fetch range-based modified files when diffRange changes
   useEffect(() => {
     if (!activeHandle || !diffRange.from) {
-      setRangeModifiedFiles([]);
+      setRangeModifiedFiles(prev => prev.length === 0 ? prev : []);
       return;
     }
     gitService.getFiles(activeHandle, diffRange.from, diffRange.to || undefined)
-      .then(setRangeModifiedFiles)
-      .catch(() => setRangeModifiedFiles([]));
+      .then(files => setRangeModifiedFiles(prev => arraysEqual(prev, files) ? prev : files))
+      .catch(() => setRangeModifiedFiles(prev => prev.length === 0 ? prev : []));
   }, [activeHandle, diffRange]);
 
   useEffect(() => {
     if (activeHandle && activeRepo?.hasPermission) {
-        // Pass knownFiles to avoid re-running statusMatrix inside getDiff
-        const known = activeId ? modifiedFiles[activeId] : undefined;
-        gitService.getDiff(activeHandle, selectedFile || undefined, diffRange.from || undefined, diffRange.to || undefined, known)
-            .then(setActiveDiff).catch(() => setActiveDiff(''));
-    } else setActiveDiff('');
-  }, [activeHandle, activeId, selectedFile, activeRepo?.hasPermission, activeStatus?.lastUpdate, diffRange, modifiedFiles]);
+        gitService.getDiff(activeHandle, selectedFile || undefined, diffRange.from || undefined, diffRange.to || undefined, currentModifiedFiles)
+            .then(d => setActiveDiff(prev => prev === d ? prev : d))
+            .catch(() => setActiveDiff(''));
+    } else setActiveDiff(prev => prev === '' ? prev : '');
+  }, [activeHandle, selectedFile, activeRepo?.hasPermission, currentModifiedFiles, diffRange]);
 
   const handleGrant = async (repo: Repository) => {
     if (!repo.handle) return;
@@ -216,7 +231,7 @@ function App() {
     const [moved] = items.splice(result.source.index, 1);
     items.splice(result.destination.index, 0, moved);
     setRepos(items);
-    await repoStore.saveRepositories(items.map(({id, name, addedAt}) => ({id, name, addedAt})));
+    await repoStore.reorderRepositories(items.map(r => r.id));
   };
 
   return (

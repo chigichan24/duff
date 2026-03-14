@@ -50,22 +50,19 @@ export const repoStore = {
     return await get(id);
   },
 
-  async verifyPermission(handle: FileSystemDirectoryHandle, readWrite = true): Promise<boolean> {
-    const options: any = {};
-    if (readWrite) {
-      options.mode = 'readwrite';
-    }
+  /** Check if permission is already granted without prompting the user */
+  async checkPermission(handle: FileSystemDirectoryHandle): Promise<boolean> {
+    try {
+      return (await (handle as any).queryPermission({ mode: 'readwrite' })) === 'granted';
+    } catch { return false; }
+  },
 
-    // Check if permission was already granted. If so, return true.
-    if ((await (handle as any).queryPermission(options)) === 'granted') {
-      return true;
-    }
-    // Request permission. If the user grants permission, return true.
-    if ((await (handle as any).requestPermission(options)) === 'granted') {
-      return true;
-    }
-    // The user didn't grant permission, so return false.
-    return false;
+  /** Verify permission, prompting the user if needed */
+  async verifyPermission(handle: FileSystemDirectoryHandle): Promise<boolean> {
+    if (await this.checkPermission(handle)) return true;
+    try {
+      return (await (handle as any).requestPermission({ mode: 'readwrite' })) === 'granted';
+    } catch { return false; }
   },
 
   async reorderRepositories(ids: string[]) {

@@ -19,13 +19,49 @@ export interface RepoStatus {
 }
 
 const gitConfig = { dir: '.', gitdir: '.git' };
-
-// Shared isomorphic-git cache for packfile/object lookups
 const gitCache = {};
 
-// Cache resolved refs to avoid repeated FS access
+const IGNORED_PREFIXES = ['node_modules/', '.git/', 'dist/'];
+
+// Ref resolution cache with TTL and stale entry cleanup
 const refCache = new Map<string, { oid: string; ts: number }>();
-const REF_CACHE_TTL = 5000; // 5 seconds
+const REF_CACHE_TTL = 5000;
+
+async function resolveOid(fs: any, ref: string): Promise<string> {
+  if (/^[0-9a-f]{40}$/.test(ref)) return ref;
+  const now = Date.now();
+  const cached = refCache.get(ref);
+  if (cached && now - cached.ts < REF_CACHE_TTL) return cached.oid;
+  const oid = await git.resolveRef({ fs, ...gitConfig, ref });
+  refCache.set(ref, { oid, ts: now });
+  // Evict stale entries periodically
+  if (refCache.size > 20) {
+    for (const [k, v] of refCache) {
+      if (now - v.ts > REF_CACHE_TTL) refCache.delete(k);
+    }
+  }
+  return oid;
+}
+
+async function getTreeFiles(fs: any, oid: string): Promise<Map<string, string>> {
+  const files = new Map<string, string>();
+  const walkTree = async (treeOid: string, prefix: string) => {
+    const { tree } = await git.readTree({ fs, ...gitConfig, oid: treeOid, cache: gitCache });
+    for (const entry of tree) {
+      const path = prefix ? `${prefix}/${entry.path}` : entry.path;
+      if (entry.type === 'blob') {
+        files.set(path, entry.oid);
+      } else if (entry.type === 'tree') {
+        await walkTree(entry.oid, path);
+      }
+    }
+  };
+  const commitOid = await resolveOid(fs, oid);
+  const { object } = await git.readObject({ fs, ...gitConfig, oid: commitOid, cache: gitCache });
+  const treeOid = (object as any).tree;
+  await walkTree(treeOid, '');
+  return files;
+}
 
 export const gitService = {
   async getStatus(handle: FileSystemDirectoryHandle): Promise<RepoStatus> {
@@ -33,18 +69,18 @@ export const gitService = {
     let branch = 'unknown';
     try {
       branch = await git.currentBranch({ fs, ...gitConfig }) || 'HEAD';
-    } catch (e) {
+    } catch {
       try {
         const ref = await git.resolveRef({ fs, ...gitConfig, ref: 'HEAD' });
         branch = ref.substring(0, 7);
-      } catch(e2) {}
+      } catch {}
     }
 
     const matrix = await git.statusMatrix({
         fs,
         ...gitConfig,
         cache: gitCache,
-        filter: path => !path.startsWith('node_modules/') && !path.startsWith('.git/') && !path.startsWith('dist/')
+        filter: (path: string) => !IGNORED_PREFIXES.some(p => path.startsWith(p))
     });
 
     const modifiedFiles = matrix
@@ -71,7 +107,7 @@ export const gitService = {
         author_email: c.commit.author.email,
         type: 'commit'
       }));
-    } catch (e) { return []; }
+    } catch { return []; }
   },
 
   async getFiles(handle: FileSystemDirectoryHandle, from?: string, to?: string): Promise<string[]> {
@@ -82,73 +118,44 @@ export const gitService = {
             return s.modifiedFiles;
         }
 
-        if (from) {
-          const getTreeFiles = async (oid: string): Promise<Map<string, string>> => {
-            const files = new Map<string, string>();
-            const walkTree = async (treeOid: string, prefix: string) => {
-              const { tree } = await git.readTree({ fs, ...gitConfig, oid: treeOid, cache: gitCache });
-              for (const entry of tree) {
-                const path = prefix ? `${prefix}/${entry.path}` : entry.path;
-                if (entry.type === 'blob') {
-                  files.set(path, entry.oid);
-                } else if (entry.type === 'tree') {
-                  await walkTree(entry.oid, path);
-                }
-              }
-            };
-            const commitOid = await this._resolveOid(fs, oid);
-            const { object } = await git.readObject({ fs, ...gitConfig, oid: commitOid, cache: gitCache });
-            const treeOid = (object as any).tree;
-            await walkTree(treeOid, '');
-            return files;
-          };
-
-          const fromFiles = await getTreeFiles(from);
-
-          if (to) {
-            const toFiles = await getTreeFiles(to);
-            const changed: string[] = [];
-            for (const [path, oid] of toFiles) {
-              if (fromFiles.get(path) !== oid) changed.push(path);
-            }
-            for (const path of fromFiles.keys()) {
-              if (!toFiles.has(path)) changed.push(path);
-            }
-            return changed.sort();
-          } else {
-            const s = await this.getStatus(handle);
-            return s.modifiedFiles;
+        if (from && to) {
+          const [fromFiles, toFiles] = await Promise.all([
+            getTreeFiles(fs, from),
+            getTreeFiles(fs, to),
+          ]);
+          const changed: string[] = [];
+          for (const [path, oid] of toFiles) {
+            if (fromFiles.get(path) !== oid) changed.push(path);
           }
+          for (const path of fromFiles.keys()) {
+            if (!toFiles.has(path)) changed.push(path);
+          }
+          return changed.sort();
         }
 
-        const matrix = await git.statusMatrix({ fs, ...gitConfig, cache: gitCache });
-        return matrix.filter(row => row[1] !== row[2]).map(row => row[0]);
-    } catch (e) { return []; }
+        // from without to: compare commit to working tree
+        const s = await this.getStatus(handle);
+        return s.modifiedFiles;
+    } catch { return []; }
   },
 
-  /**
-   * getDiff accepts an optional knownFiles to avoid re-running statusMatrix.
-   * When called from App.tsx after updateStatus, pass modifiedFiles directly.
-   */
   async getDiff(handle: FileSystemDirectoryHandle, file?: string, from?: string, to?: string, knownFiles?: string[]): Promise<string> {
     const fs = createFsaAdapter(handle);
-
-    const headOid = await this._resolveOid(fs, from || 'HEAD');
+    const headOid = await resolveOid(fs, from || 'HEAD');
 
     const getBlob = async (oid: string, path: string): Promise<string> => {
       try {
         const { blob } = await git.readBlob({ fs, ...gitConfig, oid, filepath: path, cache: gitCache });
         return new TextDecoder().decode(blob);
-      } catch (e) { return ''; }
+      } catch { return ''; }
     };
 
     const getWorking = async (path: string): Promise<string> => {
       try {
         return await fs.readFile(path, { encoding: 'utf8' });
-      } catch (e) { return ''; }
+      } catch { return ''; }
     };
 
-    // Use knownFiles to skip expensive getFiles/getStatus re-call
     let files: string[];
     if (file) {
       files = [file];
@@ -158,7 +165,7 @@ export const gitService = {
       files = await this.getFiles(handle, from, to);
     }
 
-    const toOid = to ? await this._resolveOid(fs, to) : null;
+    const toOid = to ? await resolveOid(fs, to) : null;
 
     let fullDiff = '';
     for (const f of files) {
@@ -174,21 +181,11 @@ export const gitService = {
     const fs = createFsaAdapter(handle);
     try {
       if (version) {
-        const oid = await this._resolveOid(fs, version);
+        const oid = await resolveOid(fs, version);
         const { blob } = await git.readBlob({ fs, ...gitConfig, oid, filepath: filePath, cache: gitCache });
         return blob;
       }
       return await fs.readFile(filePath);
-    } catch (e) { return null; }
-  },
-
-  /** Resolve a ref (e.g. 'HEAD') to a commit oid, with short TTL cache */
-  async _resolveOid(fs: any, ref: string): Promise<string> {
-    if (/^[0-9a-f]{40}$/.test(ref)) return ref;
-    const cached = refCache.get(ref);
-    if (cached && Date.now() - cached.ts < REF_CACHE_TTL) return cached.oid;
-    const oid = await git.resolveRef({ fs, ...gitConfig, ref });
-    refCache.set(ref, { oid, ts: Date.now() });
-    return oid;
+    } catch { return null; }
   }
 };
