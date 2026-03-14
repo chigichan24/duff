@@ -255,6 +255,10 @@ function App() {
 
       <div className="resizer" onMouseDown={() => { isResizing.current = true; const move = (me: MouseEvent) => { if (!isResizing.current) return; setSidebarWidth(Math.max(200, Math.min(600, me.clientX))); }; const up = () => { isResizing.current = false; document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); }; document.addEventListener('mousemove', move); document.addEventListener('mouseup', up); }} />
 
+      {activeId && (
+        <GitGraph handle={activeHandle || null} isVisible={showHistory} onSelectRange={(from, to) => { setDiffRange({ from, to }); setSelectedFile(null); }} />
+      )}
+
       <main className="main-content">
         {activeRepo ? (
           <>
@@ -284,7 +288,7 @@ function App() {
                         const { dir, name } = splitFilePath(f);
                         return (
                           <li key={f} className={selectedFile === f ? 'selected' : ''} onClick={() => setSelectedFile(f)}>
-                            <span className="file-path-text">{dir && <span className="file-dir">{dir}</span>}<span>{name}</span></span>
+                            <span className="file-path-text">{dir && <span className="file-dir">{dir}</span>}<span className="file-name">{name}</span></span>
                             <button className="copy-filename-btn" onClick={(e) => { e.stopPropagation(); navigator.clipboard.writeText(name); }}><Copy size={12} /></button>
                           </li>
                         );
@@ -292,14 +296,10 @@ function App() {
                     </ul>
                   </div>
                   <div className="diff-viewer">
-                    {showHistory ? (
-                      <GitGraph handle={activeHandle || null} isVisible={true} onSelectRange={(from, to) => { setDiffRange({ from, to }); setSelectedFile(null); }} />
+                    {selectedFile && isImageFile(selectedFile) ? (
+                      <ImageDiffView handle={activeHandle || null} file={selectedFile} lastUpdate={activeStatus?.lastUpdate} range={diffRange} />
                     ) : (
-                      selectedFile && isImageFile(selectedFile) ? (
-                        <ImageDiffView handle={activeHandle || null} file={selectedFile} lastUpdate={activeStatus?.lastUpdate} range={diffRange} />
-                      ) : (
-                        <DiffView diff={activeDiff} />
-                      )
+                      <DiffView diff={activeDiff} />
                     )}
                   </div>
                 </>
