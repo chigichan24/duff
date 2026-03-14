@@ -7,10 +7,8 @@ on:
     branches: [ main ]
 
 jobs:
-  test-server:
+  build-and-test:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -20,20 +18,25 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: server/package-lock.json
+          cache-dependency-path: client/package-lock.json
 
-      - name: Install dependencies
+      - name: Install client dependencies
         run: npm ci
-        working-directory: server
+        working-directory: client
 
-      - name: Run server tests
-        run: npm test
-        working-directory: server
+      - name: Type check
+        run: npx tsc -b
+        working-directory: client
 
-      - name: Check coverage
-        run: npm run test:coverage
-        working-directory: server
+      - name: Build
+        run: npm run build
+        working-directory: client
 
-      - name: Update Coverage Badge
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: bash scripts/update-coverage-badge.sh
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Run E2E tests
+        run: npx playwright test

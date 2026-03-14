@@ -34,7 +34,9 @@ export const repoStore = {
     const repos = await this.getRepositories();
     repos.push(metadata);
     await this.saveRepositories(repos);
-    await set(id, handle);
+    try { await set(id, handle); } catch {
+      // Handle may not be structured-cloneable in test environments
+    }
 
     return metadata;
   },

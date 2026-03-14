@@ -49,8 +49,8 @@ export const createFsaAdapter = (rootHandle: FileSystemDirectoryHandle): any => 
 
   const fs: any = {
     async readFile(path: string, options: any) {
-      const handle = await getHandle(path);
-      if (!(handle instanceof FileSystemFileHandle)) throw new Error('EISDIR');
+      const handle = await getHandle(path) as any;
+      if (handle.kind !== 'file') throw new Error('EISDIR');
       const file = await handle.getFile();
       const buffer = await file.arrayBuffer();
       const u8 = new Uint8Array(buffer);
@@ -70,15 +70,15 @@ export const createFsaAdapter = (rootHandle: FileSystemDirectoryHandle): any => 
     },
     async readdir(path: string) {
       const handle = await getHandle(path || '.');
-      if (!(handle instanceof FileSystemDirectoryHandle)) throw new Error('ENOTDIR');
+      if ((handle as any).kind !== 'directory') throw new Error('ENOTDIR');
       const names = [];
       for await (const name of (handle as any).keys()) names.push(name);
       return names;
     },
     async stat(path: string) {
       const handle = await getHandle(path || '.');
-      const isFile = handle instanceof FileSystemFileHandle;
-      const file = isFile ? await (handle as FileSystemFileHandle).getFile() : null;
+      const isFile = (handle as any).kind === 'file';
+      const file = isFile ? await (handle as any).getFile() : null;
       const mtimeMs = file ? file.lastModified : Date.now();
       const mtime = new Date(mtimeMs);
       return {
