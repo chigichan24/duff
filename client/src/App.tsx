@@ -6,7 +6,6 @@ import type { DropResult, DroppableProps } from '@hello-pangea/dnd';
 import pixelmatch from 'pixelmatch';
 import 'diff2html/bundles/css/diff2html.min.css';
 import './App.css';
-import LiquidGreen from './components/LiquidGreen';
 import GitGraph from './components/GitGraph';
 import { gitService, type RepoStatus } from './lib/gitService';
 import { repoStore, type RepositoryMetadata } from './lib/repoStore';
@@ -317,8 +316,7 @@ function App() {
           </>
         ) : (
           <div className="welcome">
-            <div style={{ position: 'absolute', width: '100%', height: '100%', pointerEvents: 'none' }}><LiquidGreen /></div>
-            <div className="welcome-content" style={{ zIndex: 1, textAlign: 'center', backgroundColor: 'rgba(255,255,255,0.8)', padding: '40px', borderRadius: '16px', backdropFilter: 'blur(10px)' }}>
+            <div className="welcome-content" style={{ textAlign: 'center', padding: '40px', borderRadius: '16px' }}>
                <h1>🏌️‍♂️ Welcome to Duff</h1><p>Visualize your progress across multiple Git repositories.</p>
                <button className="primary" onClick={() => setShowAddModal(true)} style={{ marginTop: '1rem' }}><Plus size={18} style={{ marginRight: '8px' }} />Add your first repository</button>
             </div>
