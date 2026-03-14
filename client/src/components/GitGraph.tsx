@@ -8,7 +8,6 @@ export interface LogEntry extends GitItem {
 }
 
 interface GitGraphProps {
-  repoId: string;
   handle: FileSystemDirectoryHandle | null;
   isVisible: boolean;
   onSelectRange: (from: string | null, to: string | null) => void;
@@ -39,7 +38,7 @@ const CONFIG = {
   }
 };
 
-const GitGraph: React.FC<GitGraphProps> = ({ repoId, handle, isVisible, onSelectRange }) => {
+const GitGraph: React.FC<GitGraphProps> = ({ handle, isVisible, onSelectRange }) => {
   const [entries, setEntries] = useState<LogEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [selection, setSelection] = useState<{ from: string | null | 'UNSET'; to: string | null | 'UNSET' }>({ from: 'UNSET', to: 'UNSET' });
@@ -62,9 +61,6 @@ const GitGraph: React.FC<GitGraphProps> = ({ repoId, handle, isVisible, onSelect
   }, [handle, isVisible]);
 
   const handleNodeClick = (hash: string | null, e: React.MouseEvent) => {
-    const clickedId = hash || 'WORKING_TREE';
-    const clickedIndex = graphData.findIndex(n => n.hash === clickedId);
-    
     let newSelection = { ...selection };
 
     if (e.shiftKey && selection.from !== 'UNSET') {

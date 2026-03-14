@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Search, Plus, Trash2, RefreshCw, GitBranch, Settings, X, GripVertical, Copy, File, History, ShieldAlert, Key, Loader2 } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Search, Plus, Trash2, RefreshCw, GitBranch, Settings, X, GripVertical, Copy, File, History, ShieldAlert, Key } from 'lucide-react';
 import * as Diff2Html from 'diff2html';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import type { DropResult, DroppableProps } from '@hello-pangea/dnd';
@@ -47,8 +47,8 @@ const ImageDiffView = ({ handle, file, lastUpdate, range }: { handle: FileSystem
     const loadImages = async () => {
       const bData = await gitService.getFileContent(handle, file, range.from || 'HEAD');
       const aData = await gitService.getFileContent(handle, file, range.to || undefined);
-      if (bData) { bUrl = URL.createObjectURL(new Blob([bData])); setBeforeUrl(bUrl); } else setBeforeUrl(null);
-      if (aData) { aUrl = URL.createObjectURL(new Blob([aData])); setAfterUrl(aUrl); } else setAfterUrl(null);
+      if (bData) { bUrl = URL.createObjectURL(new Blob([bData as BlobPart])); setBeforeUrl(bUrl); } else setBeforeUrl(null);
+      if (aData) { aUrl = URL.createObjectURL(new Blob([aData as BlobPart])); setAfterUrl(aUrl); } else setAfterUrl(null);
     };
     loadImages();
     return () => { if (bUrl) URL.revokeObjectURL(bUrl); if (aUrl) URL.revokeObjectURL(aUrl); };
@@ -137,13 +137,19 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [diffRange, setDiffRange] = useState<{ from: string | null; to: string | null }>({ from: null, to: null });
-  const [sidebarWidth, setSidebarWidth] = useState(300);
+  const [rangeModifiedFiles, setRangeModifiedFiles] = useState<string[]>([]);
+  const [globalInterval, setGlobalInterval] = useState(30);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(350);
   const isResizing = useRef(false);
 
   const activeRepo = useMemo(() => repos.find(r => r.id === activeId), [repos, activeId]);
   const activeHandle = useMemo(() => activeRepo?.handle, [activeRepo]);
   const activeStatus = useMemo(() => activeRepo?.status, [activeRepo]);
-  const activeFiles = useMemo(() => (activeId ? modifiedFiles[activeId] || [] : []).filter(f => f.toLowerCase().includes(searchTerm.toLowerCase())), [activeId, modifiedFiles, searchTerm]);
+  const activeFiles = useMemo(() => {
+    const files = diffRange.from ? rangeModifiedFiles : (activeId ? modifiedFiles[activeId] || [] : []);
+    return files.filter(f => f.toLowerCase().includes(searchTerm.toLowerCase()));
+  }, [activeId, modifiedFiles, rangeModifiedFiles, diffRange.from, searchTerm]);
 
   const updateStatus = useCallback(async (id: string, handle: FileSystemDirectoryHandle) => {
     setIsUpdating(true);
@@ -168,6 +174,24 @@ function App() {
       if (list[0]?.hasPermission && list[0].handle) updateStatus(list[0].id, list[0].handle);
     })();
   }, [updateStatus]);
+
+  // Auto-refresh interval for active repository
+  useEffect(() => {
+    if (!activeId || !activeHandle || !activeRepo?.hasPermission) return;
+    const id = setInterval(() => updateStatus(activeId, activeHandle), globalInterval * 1000);
+    return () => clearInterval(id);
+  }, [activeId, activeHandle, activeRepo?.hasPermission, globalInterval, updateStatus]);
+
+  // Fetch range-based modified files when diffRange changes
+  useEffect(() => {
+    if (!activeHandle || !diffRange.from) {
+      setRangeModifiedFiles([]);
+      return;
+    }
+    gitService.getFiles(activeHandle, diffRange.from, diffRange.to || undefined)
+      .then(setRangeModifiedFiles)
+      .catch(() => setRangeModifiedFiles([]));
+  }, [activeHandle, diffRange]);
 
   useEffect(() => {
     if (activeHandle && activeRepo?.hasPermission) {
@@ -226,10 +250,10 @@ function App() {
             )}
           </StrictModeDroppable>
         </DragDropContext>
-        <div className="sidebar-footer"><Settings size={20} /><span>Config</span></div>
+        <div className="sidebar-footer" onClick={() => setShowSettingsModal(true)} style={{ cursor: 'pointer' }}><Settings size={20} /><span>Config</span></div>
       </aside>
 
-      <div className="resizer" onMouseDown={e => { isResizing.current = true; const move = (me: MouseEvent) => { if (!isResizing.current) return; setSidebarWidth(Math.max(200, Math.min(600, me.clientX))); }; const up = () => { isResizing.current = false; document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); }; document.addEventListener('mousemove', move); document.addEventListener('mouseup', up); }} />
+      <div className="resizer" onMouseDown={() => { isResizing.current = true; const move = (me: MouseEvent) => { if (!isResizing.current) return; setSidebarWidth(Math.max(200, Math.min(600, me.clientX))); }; const up = () => { isResizing.current = false; document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); }; document.addEventListener('mousemove', move); document.addEventListener('mouseup', up); }} />
 
       <main className="main-content">
         {activeRepo ? (
@@ -269,7 +293,7 @@ function App() {
                   </div>
                   <div className="diff-viewer">
                     {showHistory ? (
-                      <GitGraph repoId={activeId!} handle={activeHandle || null} isVisible={true} onSelectRange={(from, to) => { setDiffRange({ from, to }); setSelectedFile(null); }} />
+                      <GitGraph handle={activeHandle || null} isVisible={true} onSelectRange={(from, to) => { setDiffRange({ from, to }); setSelectedFile(null); }} />
                     ) : (
                       selectedFile && isImageFile(selectedFile) ? (
                         <ImageDiffView handle={activeHandle || null} file={selectedFile} lastUpdate={activeStatus?.lastUpdate} range={diffRange} />
@@ -306,8 +330,23 @@ function App() {
                   setRepos(prev => [...prev, { ...m, handle: h, hasPermission: true }]);
                   setShowAddModal(false);
                   updateStatus(m.id, h);
-                } catch (e) {}
+                } catch (e) { console.error('Failed to add repository', e); }
               }}>Select Folder</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSettingsModal && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <h3>Settings</h3>
+            <div className="settings-field">
+              <label>Active Poll Interval (seconds):</label>
+              <input type="number" value={globalInterval} onChange={(e) => setGlobalInterval(Number(e.target.value))} min="5" />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+              <button className="primary" onClick={() => setShowSettingsModal(false)}>Close</button>
             </div>
           </div>
         </div>

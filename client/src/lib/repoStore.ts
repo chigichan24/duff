@@ -1,4 +1,4 @@
-import { get, set, del, keys } from 'idb-keyval';
+import { get, set, del } from 'idb-keyval';
 
 export interface RepositoryMetadata {
   id: string;
@@ -10,8 +10,13 @@ const METADATA_KEY = 'duff_repositories_metadata';
 
 export const repoStore = {
   async getRepositories(): Promise<RepositoryMetadata[]> {
-    const raw = localStorage.getItem(METADATA_KEY);
-    return raw ? JSON.parse(raw) : [];
+    try {
+      const raw = localStorage.getItem(METADATA_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch (e) {
+      console.error('Failed to read repositories from localStorage', e);
+      return [];
+    }
   },
 
   async saveRepositories(repos: RepositoryMetadata[]) {

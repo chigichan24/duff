@@ -203,7 +203,7 @@ const LiquidSphere = () => {
       <Float speed={2} rotationIntensity={0.2} floatIntensity={0.3}>
         <group position={[0, -0.3, 2.5]}>
           <Text
-            fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+            {...{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" } as any}
             position={[0, 0.2, 0]}
             fontSize={0.18}
             color="#1f2328"
@@ -218,7 +218,7 @@ const LiquidSphere = () => {
             <meshBasicMaterial ref={textMaterialRef1} onBeforeCompile={(s) => onBeforeCompileText(s, textMaterialRef1)} />
           </Text>
           <Text
-            fontFamily="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
+            {...{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" } as any}
             position={[0, -0.06, 0]}
             fontSize={0.07}
             color="#656d76"
