@@ -240,7 +240,14 @@ function App() {
                           <div className="drag-handle" {...p.dragHandleProps}><GripVertical size={16} /></div>
                           <div className="repo-info-container">
                             <div className="repo-info"><span className="repo-name">{repo.name}</span><div className="repo-actions">{repo.status?.hasChanges && <span className="change-badge"></span>}<button onClick={async (e) => { e.stopPropagation(); if(confirm('Remove?')){ await repoStore.removeRepository(repo.id); setRepos(prev => prev.filter(r => r.id !== repo.id)); if(activeId === repo.id) setActiveId(null); } }} className="delete-btn icon-btn"><Trash2 size={14} /></button></div></div>
-                            <div className="repo-details">{!repo.hasPermission ? <span className="permission-msg"><Key size={10} /> Access Required</span> : <span className="repo-branch"><GitBranch size={12} /> {repo.status?.branch || '...'}</span>}</div>
+                            <div className="repo-details">
+                              {!repo.hasPermission ? <span className="permission-msg"><Key size={10} /> Access Required</span> : (
+                                <>
+                                  <span className="repo-path">{repo.name}</span>
+                                  <span className="repo-branch"><GitBranch size={12} /> {repo.status?.branch || '...'}</span>
+                                </>
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
