@@ -169,7 +169,8 @@ function App() {
         if (existing?.status &&
             existing.status.branch === status.branch &&
             arraysEqual(existing.status.modifiedFiles, status.modifiedFiles)) {
-          return prev;
+          // Files unchanged — update only lastUpdate timestamp without triggering diff recalc
+          return prev.map(r => r.id === id ? { ...r, status: { ...existing.status!, lastUpdate: status.lastUpdate } } : r);
         }
         return prev.map(r => r.id === id ? { ...r, status } : r);
       });
