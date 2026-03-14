@@ -63,7 +63,7 @@ cd ..
 npm run dev
 ```
 
-Open http://localhost:5173 and click "Add your first repository" to select a local Git repository.
+Click "Add your first repository" to select a local Git repository.
 
 ### 4. Run E2E Tests
 ```bash
